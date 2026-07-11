@@ -17,7 +17,7 @@ var (
 type ProjectStatus string
 
 const (
-	ProjectStatuActive ProjectStatus = "active"
+	ProjectStatusActive ProjectStatus = "active"
 )
 
 type Project struct {
@@ -50,7 +50,7 @@ func NewProject(userID int, title string, goal string) (*Project, error) {
 		CreatedBy: userID,
 		Title:     title,
 		Goal:      goal,
-		Status:    ProjectStatuActive,
+		Status:    ProjectStatusActive,
 		CreatedAt: time.Now(),
 	}
 	return &project, nil
