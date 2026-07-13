@@ -58,3 +58,51 @@ func TestMemoryProjectRepository_GetByID_NotFound(t *testing.T) {
 	}
 
 }
+
+func TestMemoryProjectRepository_StoredProjectIsIndependent(t *testing.T) {
+	repository := NewMemoryProjectRepository()
+	project, err := domain.NewProject(123, "learn go ", "jind job in 3 months")
+
+	if err != nil {
+		t.Fatalf("NewProject returned unexpected error: %v", err)
+	}
+
+	originalTitle := project.Title
+
+	err = repository.Save(context.Background(), project)
+
+	if err != nil {
+		t.Fatalf("Save returned unexpected error: %v", err)
+	}
+
+	project.Title = "changed"
+	gotProject, err := repository.GetByID(context.Background(), project.ID)
+
+	if gotProject == nil {
+		t.Fatal("GetByID returned nil project without error")
+	}
+
+	if err != nil {
+		t.Fatalf("GetByID returned unexpected error: %v", err)
+	}
+
+	if gotProject.Title != originalTitle {
+		t.Errorf("expected project Title %v, got %v", originalTitle, gotProject.Title)
+	}
+
+	gotProject.Title = "Hack"
+
+	gotAgain, err := repository.GetByID(context.Background(), project.ID)
+
+	if gotAgain == nil {
+		t.Fatal("GetByID returned nil project without error")
+	}
+
+	if err != nil {
+		t.Fatal("expected ErrProjectNotFound, got nil")
+	}
+
+	if gotAgain.Title != originalTitle {
+		t.Errorf("expected project Title %v, got %v", originalTitle, gotAgain.Title)
+	}
+}
