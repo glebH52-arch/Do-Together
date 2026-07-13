@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	ErrProjectNotFound = errors.New("project not found")
-	ErrContextDone     = errors.New("contexct is unepexted done")
+	ErrProjectNotFound     = errors.New("project not found")
+	ErrNilProject          = errors.New("project is nil")
+	ErrProjectAlreadySaved = errors.New("project already saved")
 )
 
 type ProjectRepository interface {
@@ -31,7 +32,28 @@ func NewMemoryProjectRepository() *MemoryProjectRepository {
 	}
 }
 
+func cloneProject(project *domain.Project) *domain.Project {
+	if project == nil {
+		return nil
+	}
+
+	cloned := *project
+	if project.UpdatedAt != nil {
+		updatedAtCopy := *project.UpdatedAt
+		cloned.UpdatedAt = &updatedAtCopy
+	}
+
+	return &cloned
+}
+
 func (m *MemoryProjectRepository) Save(ctx context.Context, project *domain.Project) error {
+	if project == nil {
+		return ErrNilProject
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -39,14 +61,23 @@ func (m *MemoryProjectRepository) Save(ctx context.Context, project *domain.Proj
 		return err
 	}
 
+	if project.ID != 0 {
+		return ErrProjectAlreadySaved
+	}
 	project.ID = m.nextID
-	m.projects[m.nextID] = project
+	copyProject := cloneProject(project)
+	m.projects[m.nextID] = copyProject
 	m.nextID++
 
 	return nil
 }
 
 func (m *MemoryProjectRepository) GetByID(ctx context.Context, id int) (*domain.Project, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -60,6 +91,8 @@ func (m *MemoryProjectRepository) GetByID(ctx context.Context, id int) (*domain.
 		return nil, ErrProjectNotFound
 	}
 
-	return project, nil
+	copyProject := cloneProject(project)
+
+	return copyProject, nil
 
 }
