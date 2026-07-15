@@ -11,9 +11,9 @@ import (
 func main() {
 	repo := repository.NewMemoryProjectRepository()
 
-	Projectservice := service.NewProjectService(repo)
+	projectService := service.NewProjectService(repo)
 
-	projectHandler := handler.NewProjectHandler(Projectservice)
+	projectHandler := handler.NewProjectHandler(projectService)
 
 	router := handler.NewRouter(projectHandler)
 
