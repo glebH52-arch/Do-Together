@@ -30,20 +30,38 @@ type Project struct {
 	UpdatedAt *time.Time
 }
 
-func NewProject(userID int, title string, goal string) (*Project, error) {
+func validateTitle(title string) (string, error) {
 	title = strings.TrimSpace(title)
 	if utf8.RuneCountInString(title) > 100 {
-		return nil, ErrTitleTooLong
+		return "", ErrTitleTooLong
 	}
 	if utf8.RuneCountInString(title) == 0 {
-		return nil, ErrTitleEmpty
+		return "", ErrTitleEmpty
 	}
+	return title, nil
+}
+
+func validateGoal(goal string) (string, error) {
 	goal = strings.TrimSpace(goal)
 	if utf8.RuneCountInString(goal) > 200 {
-		return nil, ErrGoalTooLong
+		return "", ErrGoalTooLong
 	}
 	if utf8.RuneCountInString(goal) == 0 {
-		return nil, ErrGoalEmpty
+		return "", ErrGoalEmpty
+	}
+	return goal, nil
+}
+
+func NewProject(userID int, title string, goal string) (*Project, error) {
+
+	title, err := validateTitle(title)
+	if err != nil {
+		return nil, err
+	}
+
+	goal, err = validateGoal(goal)
+	if err != nil {
+		return nil, err
 	}
 
 	project := Project{
@@ -54,4 +72,23 @@ func NewProject(userID int, title string, goal string) (*Project, error) {
 		CreatedAt: time.Now(),
 	}
 	return &project, nil
+}
+
+func (p *Project) Update(title string, goal string) error {
+
+	title, err := validateTitle(title)
+	if err != nil {
+		return err
+	}
+
+	goal, err = validateGoal(goal)
+	if err != nil {
+		return err
+	}
+
+	p.Title = title
+	p.Goal = goal
+	t := time.Now()
+	p.UpdatedAt = &t
+	return nil
 }

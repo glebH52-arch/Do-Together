@@ -29,3 +29,35 @@ func (s *ProjectService) CreateProject(ctx context.Context, userID int, title st
 
 	return project, nil
 }
+
+func (s *ProjectService) ListProjects(ctx context.Context) ([]*domain.Project, error) {
+	projects, err := s.repository.List(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+func (s *ProjectService) UpdateProject(ctx context.Context, id int, title string, goal string) (*domain.Project, error) {
+	project, err := s.repository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	err = project.Update(title, goal)
+	if err != nil {
+		return nil, err
+	}
+	err = s.repository.Update(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+	return project, nil
+
+}
+func (p *ProjectService) GetProject(ctx context.Context, id int) (*domain.Project, error) {
+	project, err := p.repository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return project, nil
+}
