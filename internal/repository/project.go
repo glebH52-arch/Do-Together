@@ -4,6 +4,7 @@ import (
 	"context"
 	"do-together/internal/domain"
 	"errors"
+	"sort"
 	"sync"
 )
 
@@ -16,6 +17,8 @@ var (
 type ProjectRepository interface {
 	Save(ctx context.Context, project *domain.Project) error
 	GetByID(ctx context.Context, id int) (*domain.Project, error)
+	List(ctx context.Context) ([]*domain.Project, error)
+	Update(ctx context.Context, project *domain.Project) error
 }
 
 type MemoryProjectRepository struct {
@@ -94,5 +97,63 @@ func (m *MemoryProjectRepository) GetByID(ctx context.Context, id int) (*domain.
 	copyProject := cloneProject(project)
 
 	return copyProject, nil
+
+}
+
+func (m *MemoryProjectRepository) List(ctx context.Context) ([]*domain.Project, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	ids := make([]int, 0, len(m.projects))
+	for id := range m.projects {
+		ids = append(ids, id)
+	}
+
+	sort.Ints(ids)
+	listProjects := make([]*domain.Project, 0, len(ids))
+
+	for _, id := range ids {
+		project := m.projects[id]
+		clonedProject := cloneProject(project)
+		listProjects = append(listProjects, clonedProject)
+	}
+
+	return listProjects, nil
+}
+func (m *MemoryProjectRepository) Update(ctx context.Context, project *domain.Project) error {
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if project == nil {
+		return ErrNilProject
+	}
+
+	_, found := m.projects[project.ID]
+
+	if !found {
+		return ErrProjectNotFound
+	}
+
+	copyProject := cloneProject(project)
+	m.projects[project.ID] = copyProject
+
+	return nil
 
 }
