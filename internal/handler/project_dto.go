@@ -6,8 +6,8 @@ import (
 )
 
 type updateProjectRequest struct {
-	Title string `json:"title"`
-	Goal  string `json:"goal"`
+	Title *string `json:"title"`
+	Goal  *string `json:"goal"`
 }
 
 type projectRequest struct {
