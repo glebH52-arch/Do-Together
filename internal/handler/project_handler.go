@@ -128,6 +128,11 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
+	if request.Title == nil && request.Goal == nil {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
 	project, err := h.projectService.UpdateProject(r.Context(), id, request.Title, request.Goal)
 	if err != nil {
 		status := statusFromError(err)

@@ -38,7 +38,7 @@ func (s *ProjectService) ListProjects(ctx context.Context) ([]*domain.Project, e
 	}
 	return projects, nil
 }
-func (s *ProjectService) UpdateProject(ctx context.Context, id int, title string, goal string) (*domain.Project, error) {
+func (s *ProjectService) UpdateProject(ctx context.Context, id int, title *string, goal *string) (*domain.Project, error) {
 	project, err := s.repository.GetByID(ctx, id)
 	if err != nil {
 		return nil, err

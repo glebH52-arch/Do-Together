@@ -74,20 +74,29 @@ func NewProject(userID int, title string, goal string) (*Project, error) {
 	return &project, nil
 }
 
-func (p *Project) Update(title string, goal string) error {
+func (p *Project) Update(title *string, goal *string) error {
 
-	title, err := validateTitle(title)
-	if err != nil {
-		return err
+	newTitle := p.Title
+	newGoal := p.Goal
+
+	if title != nil {
+		validatedTitle, err := validateTitle(*title)
+		if err != nil {
+			return err
+		}
+		newTitle = validatedTitle
 	}
 
-	goal, err = validateGoal(goal)
-	if err != nil {
-		return err
+	if goal != nil {
+		validatedGoal, err := validateGoal(*goal)
+		if err != nil {
+			return err
+		}
+		newGoal = validatedGoal
 	}
 
-	p.Title = title
-	p.Goal = goal
+	p.Title = newTitle
+	p.Goal = newGoal
 	t := time.Now()
 	p.UpdatedAt = &t
 	return nil
