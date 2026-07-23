@@ -45,3 +45,18 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, password 
 	}
 	return user, nil
 }
+
+func (s *UserService) GetUser(ctx context.Context, id int) (*domain.User, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if id <= 0 {
+		return nil, repository.ErrUserNotFound
+	}
+	user, err := s.repository.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
+}

@@ -11,9 +11,8 @@ type updateProjectRequest struct {
 }
 
 type projectRequest struct {
-	CreatedBy int    `json:"created_by"`
-	Title     string `json:"title"`
-	Goal      string `json:"goal"`
+	Title string `json:"title"`
+	Goal  string `json:"goal"`
 }
 
 type projectResponse struct {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"do-together/internal/middleware"
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
@@ -21,6 +22,12 @@ func NewProjectHandler(p *service.ProjectService) *ProjectHandler {
 }
 
 func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
+	id, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || id <= 0 {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
 	request := projectRequest{}
 	err := json.NewDecoder(r.Body).Decode(&request)
 	if err != nil {
@@ -28,7 +35,7 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	project, err := h.projectService.CreateProject(r.Context(), request.CreatedBy, request.Title, request.Goal)
+	project, err := h.projectService.CreateProject(r.Context(), id, request.Title, request.Goal)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)

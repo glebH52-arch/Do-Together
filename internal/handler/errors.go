@@ -35,6 +35,8 @@ func statusFromError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrEmailInvalid):
 		return http.StatusBadRequest
+	case errors.Is(err, service.ErrInvalidCredentials):
+		return http.StatusUnauthorized
 	default:
 		return http.StatusInternalServerError
 	}
