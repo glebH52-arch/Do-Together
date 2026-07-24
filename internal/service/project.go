@@ -22,7 +22,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, userID int, title st
 		return nil, err
 	}
 
-	err = s.repository.Save(ctx, project)
+	err = s.repository.Create(ctx, userID, project)
 	if err != nil {
 		return nil, err
 	}
@@ -30,16 +30,16 @@ func (s *ProjectService) CreateProject(ctx context.Context, userID int, title st
 	return project, nil
 }
 
-func (s *ProjectService) ListProjects(ctx context.Context) ([]*domain.Project, error) {
-	projects, err := s.repository.List(ctx)
+func (s *ProjectService) ListProjects(ctx context.Context, userID int) ([]*domain.Project, error) {
+	projects, err := s.repository.List(ctx, userID)
 
 	if err != nil {
 		return nil, err
 	}
 	return projects, nil
 }
-func (s *ProjectService) UpdateProject(ctx context.Context, id int, title *string, goal *string) (*domain.Project, error) {
-	project, err := s.repository.GetByID(ctx, id)
+func (s *ProjectService) UpdateProject(ctx context.Context, userID, id int, title *string, goal *string) (*domain.Project, error) {
+	project, err := s.repository.GetByID(ctx, userID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -47,15 +47,15 @@ func (s *ProjectService) UpdateProject(ctx context.Context, id int, title *strin
 	if err != nil {
 		return nil, err
 	}
-	err = s.repository.Update(ctx, project)
+	err = s.repository.Update(ctx, userID, project)
 	if err != nil {
 		return nil, err
 	}
 	return project, nil
 
 }
-func (p *ProjectService) GetProject(ctx context.Context, id int) (*domain.Project, error) {
-	project, err := p.repository.GetByID(ctx, id)
+func (p *ProjectService) GetProject(ctx context.Context, userID, id int) (*domain.Project, error) {
+	project, err := p.repository.GetByID(ctx, userID, id)
 	if err != nil {
 		return nil, err
 	}

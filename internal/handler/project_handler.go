@@ -22,8 +22,8 @@ func NewProjectHandler(p *service.ProjectService) *ProjectHandler {
 }
 
 func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
-	id, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || id <= 0 {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -35,7 +35,7 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	project, err := h.projectService.CreateProject(r.Context(), id, request.Title, request.Goal)
+	project, err := h.projectService.CreateProject(r.Context(), userID, request.Title, request.Goal)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
@@ -57,6 +57,12 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
 	idText := mux.Vars(r)["id"]
 	id, err := strconv.Atoi(idText)
 	if err != nil {
@@ -69,7 +75,7 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	project, err := h.projectService.GetProject(r.Context(), id)
+	project, err := h.projectService.GetProject(r.Context(), userID, id)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
@@ -91,7 +97,13 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.projectService.ListProjects(r.Context())
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	projects, err := h.projectService.ListProjects(r.Context(), userID)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
@@ -116,6 +128,12 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
 	idText := mux.Vars(r)["id"]
 	id, err := strconv.Atoi(idText)
 	if err != nil {
@@ -140,7 +158,7 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	project, err := h.projectService.UpdateProject(r.Context(), id, request.Title, request.Goal)
+	project, err := h.projectService.UpdateProject(r.Context(), userID, id, request.Title, request.Goal)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)

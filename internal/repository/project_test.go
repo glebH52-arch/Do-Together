@@ -15,7 +15,7 @@ func TestMemoryProjectRepository_SaveAndGetByID(t *testing.T) {
 		t.Fatalf("Save returned unexpected error: %v", err)
 	}
 
-	err = repository.Save(context.Background(), project)
+	err = repository.Create(context.Background(), 0, project)
 
 	if err != nil {
 		t.Fatalf("Save returned unexpected error: %v", err)
@@ -25,7 +25,7 @@ func TestMemoryProjectRepository_SaveAndGetByID(t *testing.T) {
 		t.Errorf("expected project ID %v, got %v", 1, project.ID)
 	}
 
-	projectget, err := repository.GetByID(context.Background(), 1)
+	projectget, err := repository.GetByID(context.Background(), 0, 1)
 
 	if err != nil {
 		t.Fatalf("GetByID returned unexpected error: %v", err)
@@ -42,7 +42,7 @@ func TestMemoryProjectRepository_SaveAndGetByID(t *testing.T) {
 
 func TestMemoryProjectRepository_GetByID_NotFound(t *testing.T) {
 	repository := NewMemoryProjectRepository()
-	projectget, err := repository.GetByID(context.Background(), 1)
+	projectget, err := repository.GetByID(context.Background(), 0, 1)
 
 	if err == nil {
 		t.Fatal("expected ErrProjectNotFound, got nil")
@@ -69,14 +69,14 @@ func TestMemoryProjectRepository_StoredProjectIsIndependent(t *testing.T) {
 
 	originalTitle := project.Title
 
-	err = repository.Save(context.Background(), project)
+	err = repository.Create(context.Background(), 0, project)
 
 	if err != nil {
 		t.Fatalf("Save returned unexpected error: %v", err)
 	}
 
 	project.Title = "changed"
-	gotProject, err := repository.GetByID(context.Background(), project.ID)
+	gotProject, err := repository.GetByID(context.Background(), 0, project.ID)
 
 	if gotProject == nil {
 		t.Fatal("GetByID returned nil project without error")
@@ -92,7 +92,7 @@ func TestMemoryProjectRepository_StoredProjectIsIndependent(t *testing.T) {
 
 	gotProject.Title = "Hack"
 
-	gotAgain, err := repository.GetByID(context.Background(), project.ID)
+	gotAgain, err := repository.GetByID(context.Background(), 0, project.ID)
 
 	if gotAgain == nil {
 		t.Fatal("GetByID returned nil project without error")

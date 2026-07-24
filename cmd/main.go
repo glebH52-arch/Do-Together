@@ -6,7 +6,6 @@ import (
 	"do-together/internal/config"
 	"do-together/internal/handler"
 	"do-together/internal/middleware"
-	"do-together/internal/repository"
 	"do-together/internal/repository/postgres"
 	"do-together/internal/service"
 	"log"
@@ -31,8 +30,8 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 	authService := service.NewAuthService(userRepository, authManager)
 	authHandler := handler.NewAuthHandler(authService)
-	repo := repository.NewMemoryProjectRepository()
-	projectService := service.NewProjectService(repo)
+	projectRepository := postgres.NewPostgresProjectRepository(pool)
+	projectService := service.NewProjectService(projectRepository)
 	projectHandler := handler.NewProjectHandler(projectService)
 	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware)
 	err = http.ListenAndServe(":8080", router)
