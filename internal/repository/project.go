@@ -15,10 +15,10 @@ var (
 )
 
 type ProjectRepository interface {
-	Save(ctx context.Context, project *domain.Project) error
-	GetByID(ctx context.Context, id int) (*domain.Project, error)
-	List(ctx context.Context) ([]*domain.Project, error)
-	Update(ctx context.Context, project *domain.Project) error
+	Create(ctx context.Context, userID int, project *domain.Project) error
+	GetByID(ctx context.Context, userID, id int) (*domain.Project, error)
+	List(ctx context.Context, userID int) ([]*domain.Project, error)
+	Update(ctx context.Context, userID int, project *domain.Project) error
 }
 
 type MemoryProjectRepository struct {
@@ -49,7 +49,7 @@ func cloneProject(project *domain.Project) *domain.Project {
 	return &cloned
 }
 
-func (m *MemoryProjectRepository) Save(ctx context.Context, project *domain.Project) error {
+func (m *MemoryProjectRepository) Create(ctx context.Context, userID int, project *domain.Project) error {
 	if project == nil {
 		return ErrNilProject
 	}
@@ -67,6 +67,7 @@ func (m *MemoryProjectRepository) Save(ctx context.Context, project *domain.Proj
 	if project.ID != 0 {
 		return ErrProjectAlreadySaved
 	}
+	project.CreatedBy = userID
 	project.ID = m.nextID
 	copyProject := cloneProject(project)
 	m.projects[m.nextID] = copyProject
@@ -75,7 +76,7 @@ func (m *MemoryProjectRepository) Save(ctx context.Context, project *domain.Proj
 	return nil
 }
 
-func (m *MemoryProjectRepository) GetByID(ctx context.Context, id int) (*domain.Project, error) {
+func (m *MemoryProjectRepository) GetByID(ctx context.Context, userID, id int) (*domain.Project, error) {
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -93,6 +94,9 @@ func (m *MemoryProjectRepository) GetByID(ctx context.Context, id int) (*domain.
 	if !ok {
 		return nil, ErrProjectNotFound
 	}
+	if project.CreatedBy != userID {
+		return nil, ErrProjectNotFound
+	}
 
 	copyProject := cloneProject(project)
 
@@ -100,7 +104,7 @@ func (m *MemoryProjectRepository) GetByID(ctx context.Context, id int) (*domain.
 
 }
 
-func (m *MemoryProjectRepository) List(ctx context.Context) ([]*domain.Project, error) {
+func (m *MemoryProjectRepository) List(ctx context.Context, userID int) ([]*domain.Project, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -114,6 +118,7 @@ func (m *MemoryProjectRepository) List(ctx context.Context) ([]*domain.Project, 
 
 	ids := make([]int, 0, len(m.projects))
 	for id := range m.projects {
+
 		ids = append(ids, id)
 	}
 
@@ -122,13 +127,15 @@ func (m *MemoryProjectRepository) List(ctx context.Context) ([]*domain.Project, 
 
 	for _, id := range ids {
 		project := m.projects[id]
-		clonedProject := cloneProject(project)
-		listProjects = append(listProjects, clonedProject)
+		if project.CreatedBy == userID {
+			clonedProject := cloneProject(project)
+			listProjects = append(listProjects, clonedProject)
+		}
 	}
 
 	return listProjects, nil
 }
-func (m *MemoryProjectRepository) Update(ctx context.Context, project *domain.Project) error {
+func (m *MemoryProjectRepository) Update(ctx context.Context, userID int, project *domain.Project) error {
 
 	if err := ctx.Err(); err != nil {
 		return err
@@ -145,13 +152,17 @@ func (m *MemoryProjectRepository) Update(ctx context.Context, project *domain.Pr
 		return ErrNilProject
 	}
 
-	_, found := m.projects[project.ID]
+	storedProject, found := m.projects[project.ID]
 
 	if !found {
 		return ErrProjectNotFound
 	}
+	if storedProject.CreatedBy != userID {
+		return ErrProjectNotFound
+	}
 
 	copyProject := cloneProject(project)
+	copyProject.CreatedBy = storedProject.CreatedBy
 	m.projects[project.ID] = copyProject
 
 	return nil
