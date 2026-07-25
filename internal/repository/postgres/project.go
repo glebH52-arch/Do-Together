@@ -82,14 +82,14 @@ func (p *PostgresProjectRepository) GetByID(ctx context.Context, userID, id int)
 	}
 	return &project, nil
 }
-func (p *PostgresProjectRepository) List(ctx context.Context, userID int) ([]*domain.Project, error) {
+func (p *PostgresProjectRepository) List(ctx context.Context, userID int, options repository.ProjectListOptions) ([]*domain.Project, error) {
 	if userID <= 0 {
 		return nil, repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	rows, err := p.pool.Query(ctx, stmtGetListProjects, userID)
+	rows, err := p.pool.Query(ctx, stmtGetListProjects, userID, options.Status, options.Limit, options.Offset)
 
 	if err != nil {
 		return nil, fmt.Errorf("query list project: %w", err)
@@ -126,7 +126,7 @@ func (p *PostgresProjectRepository) Update(ctx context.Context, userID int, proj
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtUpdateProject, project.Title, project.Goal, project.UpdatedAt, project.ID, userID)
+	commandTag, err := p.pool.Exec(ctx, stmtUpdateProject, project.Title, project.Goal, project.Status, project.UpdatedAt, project.ID, userID)
 
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
