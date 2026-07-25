@@ -48,8 +48,9 @@ var statements = map[string]string{
 	stmtGetListProjects: `
 		SELECT p.id,p.created_by,p.title,goal,p.status,p.created_at,p.updated_at FROM projects AS p
 		JOIN project_members AS pm ON p.id = pm.project_id
-		WHERE pm.user_id = $1
+		WHERE pm.user_id = $1 AND ($2::text IS NULL OR p.status = $2::text)
 		ORDER BY p.id
+		LIMIT  $3 OFFSET  $4
 	`,
 
 	stmtUpdateProject: `
@@ -57,11 +58,12 @@ var statements = map[string]string{
 	SET
     title = $1,
     goal = $2,
-    updated_at = $3
+	status = $3,
+    updated_at = $4
 	FROM project_members AS pm
-	WHERE p.id = $4
+	WHERE p.id = $5
 	AND pm.project_id = p.id
-	AND pm.user_id = $5
+	AND pm.user_id = $6
 	AND pm.role = 'creator'
 	`,
 }

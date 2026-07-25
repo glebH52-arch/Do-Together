@@ -103,7 +103,14 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	projects, err := h.projectService.ListProjects(r.Context(), userID)
+	query := r.URL.Query()
+	option, err := parseProjectListOptions(query)
+	if err != nil {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	projects, err := h.projectService.ListProjects(r.Context(), userID, option)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
@@ -178,4 +185,31 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+}
+func (h *ProjectHandler) ArchiveProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	idText := mux.Vars(r)["id"]
+	id, err := strconv.Atoi(idText)
+	if err != nil {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	if id <= 0 {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	err = h.projectService.ArchiveProject(r.Context(), userID, id)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

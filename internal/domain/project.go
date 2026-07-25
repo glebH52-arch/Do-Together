@@ -17,7 +17,8 @@ var (
 type ProjectStatus string
 
 const (
-	ProjectStatusActive ProjectStatus = "active"
+	ProjectStatusActive   ProjectStatus = "active"
+	ProjectStatusArchived ProjectStatus = "archived"
 )
 
 type Project struct {
@@ -100,4 +101,13 @@ func (p *Project) Update(title *string, goal *string) error {
 	t := time.Now()
 	p.UpdatedAt = &t
 	return nil
+}
+
+func (p *Project) Archive() {
+	if p.Status == ProjectStatusArchived {
+		return
+	}
+	t := time.Now()
+	p.Status = ProjectStatusArchived
+	p.UpdatedAt = &t
 }
