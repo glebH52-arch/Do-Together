@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"do-together/internal/domain"
+
 	"errors"
 	"sort"
 	"sync"
@@ -17,8 +18,14 @@ var (
 type ProjectRepository interface {
 	Create(ctx context.Context, userID int, project *domain.Project) error
 	GetByID(ctx context.Context, userID, id int) (*domain.Project, error)
-	List(ctx context.Context, userID int) ([]*domain.Project, error)
+	List(ctx context.Context, userID int, options ProjectListOptions) ([]*domain.Project, error)
 	Update(ctx context.Context, userID int, project *domain.Project) error
+}
+
+type ProjectListOptions struct {
+	Limit  int
+	Offset int
+	Status *domain.ProjectStatus
 }
 
 type MemoryProjectRepository struct {
@@ -104,7 +111,7 @@ func (m *MemoryProjectRepository) GetByID(ctx context.Context, userID, id int) (
 
 }
 
-func (m *MemoryProjectRepository) List(ctx context.Context, userID int) ([]*domain.Project, error) {
+func (m *MemoryProjectRepository) List(ctx context.Context, userID int, options ProjectListOptions) ([]*domain.Project, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
