@@ -58,7 +58,7 @@ func (p *PostgresProjectRepository) Create(ctx context.Context, userID int, proj
 	}
 	err = tx.Commit(ctx)
 	if err != nil {
-		return fmt.Errorf("commit: %ws", err)
+		return fmt.Errorf("commit: %w", err)
 	}
 	project.ID = id
 	project.CreatedBy = userID
