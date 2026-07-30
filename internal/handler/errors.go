@@ -37,6 +37,14 @@ func statusFromError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, service.ErrInvalidCredentials):
 		return http.StatusUnauthorized
+	case errors.Is(err, repository.ErrProjectMemberNotFound):
+		return 404
+	case errors.Is(err, repository.ErrProjectMemberAlreadyExists):
+		return 409
+	case errors.Is(err, repository.ErrForbidden):
+		return 403
+	case errors.Is(err, domain.ErrInvalidProjectMemberRole):
+		return 400
 	default:
 		return http.StatusInternalServerError
 	}

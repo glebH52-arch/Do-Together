@@ -33,7 +33,10 @@ func main() {
 	projectRepository := postgres.NewPostgresProjectRepository(pool)
 	projectService := service.NewProjectService(projectRepository)
 	projectHandler := handler.NewProjectHandler(projectService)
-	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware)
+	projectMemberRepository := postgres.NewPostgresProjectMemberRepository(pool)
+	projectMemberService := service.NewProjectMemberService(projectMemberRepository)
+	projectMemberHandler := handler.NewProjectMemberHandler(projectMemberService)
+	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware, projectMemberHandler)
 	err = http.ListenAndServe(":8080", router)
 	if err != nil {
 		log.Println(err)
