@@ -7,7 +7,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware.AuthMiddleware, pm *ProjectMemberHandler) http.Handler {
+func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware.AuthMiddleware, pm *ProjectMemberHandler, ih *InviteHandler) http.Handler {
 	router := mux.NewRouter()
 	router.Path("/projects").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(p.CreateProject)))
 	router.Path("/projects/{id}").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(p.GetProject)))
@@ -16,9 +16,13 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 	router.Path("/projects/{id}").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(p.ArchiveProject)))
 
 	router.Path("/projects/{id}/members").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(pm.GetMembers)))
-	router.Path("/projects/{id}/members").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(pm.AddMember)))
 	router.Path("/projects/{id}/members/{userID}").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(pm.UpdateMember)))
 	router.Path("/projects/{id}/members/{userID}").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(pm.RemoveMember)))
+
+	router.Path("/projects/{id}/invites").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(ih.CreateInvite)))
+	router.Path("/invites").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(ih.ListInvites)))
+	router.Path("/invites/{id}/accept").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(ih.AcceptInvite)))
+	router.Path("/invites/{id}/decline").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(ih.DeclineInvite)))
 
 	router.Path("/users").Methods(http.MethodPost).HandlerFunc(u.CreateUser)
 	router.Path("/auth/login").Methods(http.MethodPost).HandlerFunc(a.Login)

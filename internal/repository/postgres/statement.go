@@ -20,6 +20,11 @@ const (
 	stmtUpdateRole            = "update_role"
 	stmtAddProjectMember      = "add_project_member"
 	stmtRemoveProjectMember   = "remove_project_member"
+	stmtCreateInvite          = "create_invite"
+	stmtGetListInvites        = "get_list_invites"
+	stmtAcceptInvite          = "accept_invite"
+	stmtDeclineInvite         = "decline_invite"
+	stmtGetInviteForUpdate    = "get_invite_for_update"
 )
 
 var statements = map[string]string{
@@ -33,7 +38,6 @@ var statements = map[string]string{
 		WHERE id = $1`,
 	stmtGetUserByEmail: `SELECT id,username,email,password_hash,status,created_at,updated_at FROM users
 		WHERE email = $1`,
-
 	stmtCreateProject: `
 	INSERT INTO projects(created_by,title,goal,status,created_at)
 	VALUES($1,$2,$3,$4,$5)
@@ -48,7 +52,6 @@ var statements = map[string]string{
 		JOIN project_members AS pm ON p.id = pm.project_id
 		WHERE p.id = $1 AND pm.user_id = $2
 	`,
-
 	stmtGetListProjects: `
 		SELECT p.id,p.created_by,p.title,goal,p.status,p.created_at,p.updated_at FROM projects AS p
 		JOIN project_members AS pm ON p.id = pm.project_id
@@ -56,7 +59,6 @@ var statements = map[string]string{
 		ORDER BY p.id
 		LIMIT  $3 OFFSET  $4
 	`,
-
 	stmtUpdateProject: `
 	UPDATE projects AS p
 	SET
@@ -70,7 +72,6 @@ var statements = map[string]string{
 	AND pm.user_id = $6
 	AND pm.role = 'creator'
 	`,
-
 	stmtGetListProjectMembers: `
 SELECT
     pm.project_id,
@@ -90,7 +91,6 @@ AND EXISTS (
 )
 ORDER BY pm.user_id
 	`,
-
 	stmtUpdateRole: `
 	UPDATE project_members AS target
 	SET
@@ -105,9 +105,8 @@ ORDER BY pm.user_id
 	WHERE actor.project_id = target.project_id
 	AND actor.user_id = $4
 	AND actor.role IN ('creator', 'admin')
-)
+	)
  `,
-
 	stmtAddProjectMember: `
 	INSERT INTO project_members(project_id,user_id,role,joined_at)
 	SELECT $1, $2, $3, $4
@@ -132,6 +131,55 @@ ORDER BY pm.user_id
 	AND actor.user_id = $3
 	AND actor.role IN ('creator', 'admin')
 )
+	`,
+	stmtCreateInvite: `
+	INSERT INTO invites(project_id,inviter_id,invitee_id,role,status,expires_at,created_at)
+	SELECT $1,$2,$3,$4,$5,$6,$7
+	WHERE $4 IN ('admin', 'member')
+	AND EXISTS (
+	SELECT 1
+    FROM project_members AS pm
+	WHERE pm.project_id = $1
+	AND pm.user_id = $2
+	AND pm.role IN ('creator', 'admin')
+)
+	 AND NOT EXISTS (
+      SELECT 1
+      FROM project_members AS target
+      WHERE target.project_id = $1
+        AND target.user_id = $3
+  )
+RETURNING id
+	`,
+	stmtGetListInvites: `
+	SELECT id,project_id,inviter_id,invitee_id,role,status,expires_at,created_at,updated_at FROM invites
+	WHERE invitee_id = $1
+	ORDER BY created_at , id
+	`,
+	stmtAcceptInvite: `
+	UPDATE invites
+SET status = $1,
+    updated_at = $2
+WHERE id = $3
+  AND status = 'pending'
+	`,
+	stmtDeclineInvite: `
+	UPDATE invites
+SET status = 'declined',
+    updated_at = $3
+WHERE id = $1
+  AND invitee_id = $2
+  AND status = 'pending'
+  AND expires_at > $3
+	`,
+
+	stmtGetInviteForUpdate: `
+	SELECT id, project_id, inviter_id, invitee_id,
+       role, status, expires_at, created_at, updated_at
+FROM invites
+WHERE id = $1
+  AND invitee_id = $2
+FOR UPDATE
 	`,
 }
 
