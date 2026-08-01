@@ -38,13 +38,27 @@ func statusFromError(err error) int {
 	case errors.Is(err, service.ErrInvalidCredentials):
 		return http.StatusUnauthorized
 	case errors.Is(err, repository.ErrProjectMemberNotFound):
-		return 404
+		return http.StatusNotFound
 	case errors.Is(err, repository.ErrProjectMemberAlreadyExists):
-		return 409
+		return http.StatusConflict
 	case errors.Is(err, repository.ErrForbidden):
 		return 403
 	case errors.Is(err, domain.ErrInvalidProjectMemberRole):
-		return 400
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidInviterID):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidInviteeID):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidInviteRole):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInviteNotPending):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrInviteExpired):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrInviteNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, domain.ErrPendingInviteAlreadyExists):
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}

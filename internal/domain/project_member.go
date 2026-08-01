@@ -58,3 +58,14 @@ func (r ProjectMemberRole) IsValid() error {
 	}
 	return nil
 }
+
+func (r ProjectMemberRole) validateInviteRole() error {
+	switch r {
+	case ProjectMemberRoleMember,
+		ProjectMemberRoleAdmin:
+
+	default:
+		return ErrInvalidInviteRole
+	}
+	return nil
+}
