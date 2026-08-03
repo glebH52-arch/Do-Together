@@ -25,6 +25,11 @@ const (
 	stmtAcceptInvite          = "accept_invite"
 	stmtDeclineInvite         = "decline_invite"
 	stmtGetInviteForUpdate    = "get_invite_for_update"
+	stmtCreateTask            = "create_task"
+	stmtGetListTask           = "get_list_task"
+	stmtGetTaskByID           = "get_task_by_id"
+	stmtUpdateTask            = "update_task"
+	stmtRemoveTask            = "remove_task"
 )
 
 var statements = map[string]string{
@@ -180,6 +185,76 @@ FROM invites
 WHERE id = $1
   AND invitee_id = $2
 FOR UPDATE
+	`,
+	stmtCreateTask: `
+	INSERT INTO tasks(project_id,title,description,created_by,status,created_at,due_at)
+	SELECT $1,$2,$3,$4,$5,$6,$7
+	WHERE EXISTS (
+	SELECT 1
+    FROM project_members AS pm
+	WHERE pm.project_id = $1
+	AND pm.user_id = $4
+	)
+	RETURNING id
+	`,
+
+	stmtUpdateTask: `
+	UPDATE tasks AS target
+	SET
+    title = $1,
+    description = $2,
+    status = $3,
+    updated_at = $4
+	FROM project_members pm
+	WHERE target.id = $5
+	AND target.project_id = $6
+	AND pm.project_id = target.project_id
+	AND pm.user_id = $7;
+	`,
+
+	stmtGetListTask: `
+	SELECT
+    t.id, t.project_id, t.title, t.description,
+    t.created_by, t.status, t.created_at,
+    t.updated_at, t.due_at
+FROM tasks AS t
+WHERE t.project_id = $1
+  AND EXISTS (
+      SELECT 1
+      FROM project_members AS pm
+      WHERE pm.project_id = t.project_id
+        AND pm.user_id = $2
+  )
+ORDER BY t.id
+	`,
+
+	stmtGetTaskByID: `
+	SELECT
+		t.id, t.project_id, t.title, t.description,
+		t.created_by, t.status, t.created_at,
+		t.updated_at, t.due_at
+	FROM tasks AS t
+	WHERE t.id = $1
+	  AND t.project_id = $2
+	  AND EXISTS (
+		  SELECT 1
+		  FROM project_members AS pm
+		  WHERE pm.project_id = t.project_id
+		    AND pm.user_id = $3
+	  )
+`,
+
+	stmtRemoveTask: `
+	DELETE FROM tasks AS target
+	WHERE id = $1
+	AND target.project_id = $2
+	AND target.created_by = $3
+	AND EXISTS (
+	SELECT 1
+	FROM project_members AS pm
+	WHERE pm.project_id = target.project_id
+	  AND pm.user_id = $3
+)
 	`,
 }
 
