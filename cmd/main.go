@@ -7,6 +7,8 @@ import (
 	"do-together/internal/handler"
 	"do-together/internal/middleware"
 	"do-together/internal/repository/postgres"
+	"do-together/internal/repository/redis"
+	redisrepo "do-together/internal/repository/redis"
 	"do-together/internal/service"
 	"log"
 	"net/http"
@@ -23,12 +25,24 @@ func main() {
 		log.Fatalf("connect to postgres: %v", err)
 	}
 	defer pool.Close()
+	redisClient, err := redisrepo.NewRedisClient(context.Background(), cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	if err != nil {
+		log.Fatalf("connect to redis: %v", err)
+	}
+	defer redisClient.Close()
+	refreshSessionRepository := redis.NewRefreshSessionRepository(redisClient)
 	authManager := auth.NewJWTManager(cfg.JWTSecret, cfg.AccessTokenTTL, "do-together")
 	authMiddleware := middleware.NewAuthMiddleware(authManager)
 	userRepository := postgres.NewPostgresUserRepository(pool)
 	userService := service.NewUserService(userRepository)
 	userHandler := handler.NewUserHandler(userService)
-	authService := service.NewAuthService(userRepository, authManager)
+	authService := service.NewAuthService(
+		userRepository,
+		authManager,
+		refreshSessionRepository,
+		cfg.RefreshTokenIdleTTL,
+		cfg.RefreshTokenAbsoluteTTL,
+	)
 	authHandler := handler.NewAuthHandler(authService)
 	projectRepository := postgres.NewPostgresProjectRepository(pool)
 	projectService := service.NewProjectService(projectRepository)
