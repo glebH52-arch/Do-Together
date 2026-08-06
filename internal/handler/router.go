@@ -32,6 +32,8 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 
 	router.Path("/users").Methods(http.MethodPost).HandlerFunc(u.CreateUser)
 	router.Path("/auth/login").Methods(http.MethodPost).HandlerFunc(a.Login)
+	router.Path("/auth/refresh").Methods(http.MethodPost).HandlerFunc(a.Refresh)
+	router.Path("/auth/logout").Methods(http.MethodPost).HandlerFunc(a.Logout)
 	router.Path("/users/me").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(u.GetMe)))
 
 	return router

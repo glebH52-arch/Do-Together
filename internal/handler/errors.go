@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"do-together/internal/auth"
 	"do-together/internal/domain"
 	"do-together/internal/repository"
 	"do-together/internal/service"
@@ -69,6 +70,18 @@ func statusFromError(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, repository.ErrNilTask):
 		return http.StatusInternalServerError
+	case errors.Is(err, repository.ErrSessionNotFound):
+		return http.StatusUnauthorized
+	case errors.Is(err, repository.ErrSessionExpired):
+		return http.StatusUnauthorized
+	case errors.Is(err, repository.ErrTokenMismatch):
+		return http.StatusUnauthorized
+	case errors.Is(err, repository.ErrSessionAlreadyUsed):
+		return http.StatusUnauthorized
+	case errors.Is(err, repository.ErrRedisUnavailable):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, auth.ErrInvalidRefreshToken):
+		return http.StatusUnauthorized
 
 	default:
 		return http.StatusInternalServerError
