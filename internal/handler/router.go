@@ -7,7 +7,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware.AuthMiddleware, pm *ProjectMemberHandler, ih *InviteHandler, t *TaskHandler) http.Handler {
+func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware.AuthMiddleware, pm *ProjectMemberHandler, ih *InviteHandler, t *TaskHandler, h *HealthHandler) http.Handler {
 	router := mux.NewRouter()
 	router.Path("/projects").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(p.CreateProject)))
 	router.Path("/projects/{id}").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(p.GetProject)))
@@ -35,6 +35,7 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 	router.Path("/auth/refresh").Methods(http.MethodPost).HandlerFunc(a.Refresh)
 	router.Path("/auth/logout").Methods(http.MethodPost).HandlerFunc(a.Logout)
 	router.Path("/users/me").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(u.GetMe)))
-
+	router.Path("/health").Methods(http.MethodGet).HandlerFunc(h.Health)
+	router.Path("/ready").Methods(http.MethodGet).HandlerFunc(h.Ready)
 	return router
 }
