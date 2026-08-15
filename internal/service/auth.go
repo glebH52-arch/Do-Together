@@ -66,7 +66,7 @@ func (a *AuthService) Login(ctx context.Context, email, password string) (access
 		return "", "", 0, fmt.Errorf("compare password hash: %w", err)
 	}
 
-	accessToken, _, err = a.jwtManager.CreateAccessToken(user.ID)
+	accessToken, expiresIn, err = a.jwtManager.CreateAccessToken(user.ID)
 	if err != nil {
 		return "", "", 0, err
 	}
