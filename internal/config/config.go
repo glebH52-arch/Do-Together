@@ -40,9 +40,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("REDIS_ADDR  is required")
 	}
 	redisPassword := os.Getenv("REDIS_PASSWORD")
-	//if redisPassword == "" {
-	//return nil, fmt.Errorf("REDIS_PASSWORD  is required")
-	//}
+	
 	redisDB, err := strconv.Atoi(os.Getenv("REDIS_DB"))
 
 	if err != nil {
