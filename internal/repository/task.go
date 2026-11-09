@@ -9,12 +9,13 @@ import (
 var (
 	ErrTaskNotFound = errors.New("task not found")
 	ErrNilTask      = errors.New("nil task")
+	ErrTaskConflict = errors.New("task changed concurrently")
 )
 
 type TaskRepository interface {
 	Create(ctx context.Context, task *domain.Task) (*domain.Task, error)
 	List(ctx context.Context, actorID, projectID int) ([]*domain.Task, error)
-	Update(ctx context.Context, task *domain.Task, actorID, projectID int) error
+	Update(ctx context.Context, before, after *domain.Task, actorID, projectID int) error
 	Remove(ctx context.Context, taskID, actorID, projectID int) error
 	GetByID(ctx context.Context, actorID, projectID, taskID int) (*domain.Task, error)
 }

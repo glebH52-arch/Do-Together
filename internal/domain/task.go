@@ -42,6 +42,7 @@ var (
 	ErrTaskDescriptionEmpty   = errors.New("Description empty")
 	ErrTaskDescriptionTooLong = errors.New("Description too long")
 	ErrInvalidTaskStatus      = errors.New("invalid task status")
+	ErrInvalidTaskTransition  = errors.New("invalid task status transition")
 )
 
 func validateDescription(description string) (string, error) {
@@ -125,7 +126,27 @@ func (t *Task) Update(title, description *string, status *TaskStatus) error {
 		if err := validateStatus(*status); err != nil {
 			return err
 		}
+		if *status != t.Status {
+			allowed := map[TaskStatus]TaskStatus{
+				TaskStatusTodo:       TaskStatusInProgress,
+				TaskStatusInProgress: TaskStatusReview,
+				TaskStatusReview:     TaskStatusDone,
+				TaskStatusDone:       TaskStatusInProgress,
+			}
+			if allowed[t.Status] != *status && !(t.Status == TaskStatusReview && *status == TaskStatusInProgress) {
+				return ErrInvalidTaskTransition
+			}
+		}
 		newStatus = *status
+	}
+	if newTitle == t.Title && newDescription == t.Description && newStatus == t.Status {
+		return nil
+	}
+	if newStatus == TaskStatusDone && t.Status != TaskStatusDone {
+		now := time.Now()
+		t.CompletedAt = &now
+	} else if t.Status == TaskStatusDone && newStatus != TaskStatusDone {
+		t.CompletedAt = nil
 	}
 	t.Title = newTitle
 	t.Description = newDescription

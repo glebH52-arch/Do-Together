@@ -51,11 +51,15 @@ func (s *TaskService) UpdateTask(ctx context.Context, actorID, projectID, taskID
 	if err != nil {
 		return err
 	}
+	before := *task
 	err = task.Update(title, description, status)
 	if err != nil {
 		return err
 	}
-	err = s.repository.Update(ctx, task, actorID, projectID)
+	if task.Title == before.Title && task.Description == before.Description && task.Status == before.Status {
+		return nil
+	}
+	err = s.repository.Update(ctx, &before, task, actorID, projectID)
 	if err != nil {
 		return err
 	}
