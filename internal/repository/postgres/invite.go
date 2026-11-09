@@ -35,10 +35,31 @@ func (p *PostgresInviteRepository) Create(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := p.pool.QueryRow(ctx, stmtCreateInvite, invite.ProjectID, invite.InviterID, invite.InviteeID, invite.Role, invite.Status, invite.ExpiresAt, invite.CreatedAt).Scan(&invite.ID)
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin invite: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, stmtExpireStaleInvites, invite.ProjectID, invite.InviteeID, invite.CreatedAt); err != nil {
+		return fmt.Errorf("expire stale invites: %w", err)
+	}
+	err = tx.QueryRow(ctx, stmtCreateInvite, invite.ProjectID, invite.InviterID, invite.InviteeID, invite.Role, invite.Status, invite.ExpiresAt, invite.CreatedAt).Scan(&invite.ID, &invite.ProjectTitle, &invite.InviterName)
 	if err != nil {
 
 		if errors.Is(err, pgx.ErrNoRows) {
+			var canInvite, isMember bool
+			if checkErr := tx.QueryRow(ctx, stmtCanInvite, invite.ProjectID, invite.InviterID).Scan(&canInvite); checkErr != nil {
+				return checkErr
+			}
+			if !canInvite {
+				return repository.ErrForbidden
+			}
+			if checkErr := tx.QueryRow(ctx, stmtIsProjectMember, invite.ProjectID, invite.InviteeID).Scan(&isMember); checkErr != nil {
+				return checkErr
+			}
+			if isMember {
+				return repository.ErrProjectMemberAlreadyExists
+			}
 			return repository.ErrForbidden
 		}
 
@@ -68,7 +89,22 @@ func (p *PostgresInviteRepository) Create(
 
 		return fmt.Errorf("insert invite: %w", err)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit invite: %w", err)
+	}
 	return nil
+}
+
+func (p *PostgresInviteRepository) FindInviteeIDByEmail(ctx context.Context, email string) (int, error) {
+	var id int
+	err := p.pool.QueryRow(ctx, stmtFindInviteeByEmail, email).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, repository.ErrUserNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("find invitee: %w", err)
+	}
+	return id, nil
 }
 
 func (p *PostgresInviteRepository) List(
@@ -93,7 +129,7 @@ func (p *PostgresInviteRepository) List(
 	for rows.Next() {
 		var invite domain.Invite
 
-		err := rows.Scan(&invite.ID, &invite.ProjectID, &invite.InviterID, &invite.InviteeID, &invite.Role, &invite.Status, &invite.ExpiresAt, &invite.CreatedAt, &invite.UpdatedAt)
+		err := rows.Scan(&invite.ID, &invite.ProjectID, &invite.InviterID, &invite.InviteeID, &invite.Role, &invite.Status, &invite.ExpiresAt, &invite.CreatedAt, &invite.UpdatedAt, &invite.ProjectTitle, &invite.InviterName)
 		if err != nil {
 			return nil, fmt.Errorf("rows scan: %w", err)
 		}

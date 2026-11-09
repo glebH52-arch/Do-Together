@@ -25,6 +25,10 @@ const (
 	stmtAcceptInvite          = "accept_invite"
 	stmtDeclineInvite         = "decline_invite"
 	stmtGetInviteForUpdate    = "get_invite_for_update"
+	stmtFindInviteeByEmail    = "find_invitee_by_email"
+	stmtExpireStaleInvites    = "expire_stale_invites"
+	stmtCanInvite             = "can_invite"
+	stmtIsProjectMember       = "is_project_member"
 	stmtCreateTask            = "create_task"
 	stmtGetListTask           = "get_list_task"
 	stmtGetTaskByID           = "get_task_by_id"
@@ -137,7 +141,13 @@ ORDER BY pm.user_id
 	AND actor.role IN ('creator', 'admin')
 )
 	`,
+	stmtFindInviteeByEmail: `SELECT id FROM users WHERE email = $1`,
+	stmtExpireStaleInvites: `UPDATE invites SET status = 'expired', updated_at = $3
+		WHERE project_id = $1 AND invitee_id = $2 AND status = 'pending' AND expires_at <= $3`,
+	stmtCanInvite:       `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2 AND role IN ('creator','admin'))`,
+	stmtIsProjectMember: `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=$2)`,
 	stmtCreateInvite: `
+	WITH inserted AS (
 	INSERT INTO invites(project_id,inviter_id,invitee_id,role,status,expires_at,created_at)
 	SELECT $1,$2,$3,$4,$5,$6,$7
 	WHERE $4 IN ('admin', 'member')
@@ -154,12 +164,24 @@ ORDER BY pm.user_id
       WHERE target.project_id = $1
         AND target.user_id = $3
   )
-RETURNING id
+	RETURNING id, project_id, inviter_id, invitee_id
+	), notification AS (
+	INSERT INTO notifications(recipient_id, project_id, invite_id, kind, payload)
+	SELECT invitee_id, project_id, id, 'invitation', jsonb_build_object('invite_id', id)
+	FROM inserted ON CONFLICT DO NOTHING RETURNING invite_id
+	)
+	SELECT inserted.id, project.title, inviter.username
+	FROM inserted JOIN notification ON notification.invite_id = inserted.id
+	JOIN projects AS project ON project.id = inserted.project_id
+	JOIN users AS inviter ON inviter.id = inserted.inviter_id
 	`,
 	stmtGetListInvites: `
-	SELECT id,project_id,inviter_id,invitee_id,role,status,expires_at,created_at,updated_at FROM invites
-	WHERE invitee_id = $1
-	ORDER BY created_at , id
+	SELECT i.id,i.project_id,i.inviter_id,i.invitee_id,i.role,i.status,i.expires_at,i.created_at,i.updated_at,
+		p.title,u.username FROM invites AS i
+	JOIN projects AS p ON p.id = i.project_id
+	JOIN users AS u ON u.id = i.inviter_id
+	WHERE i.invitee_id = $1
+	ORDER BY i.created_at, i.id
 	`,
 	stmtAcceptInvite: `
 	UPDATE invites

@@ -6,15 +6,17 @@ import (
 )
 
 type Invite struct {
-	ID        int
-	ProjectID int
-	InviterID int
-	InviteeID int
-	Role      ProjectMemberRole
-	Status    InviteStatus
-	ExpiresAt time.Time
-	CreatedAt time.Time
-	UpdatedAt *time.Time
+	ID           int
+	ProjectID    int
+	InviterID    int
+	InviteeID    int
+	Role         ProjectMemberRole
+	Status       InviteStatus
+	ExpiresAt    time.Time
+	CreatedAt    time.Time
+	UpdatedAt    *time.Time
+	ProjectTitle string
+	InviterName  string
 }
 
 type InviteStatus string

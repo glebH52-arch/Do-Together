@@ -48,7 +48,17 @@ func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	invite, err := h.inviteService.Create(r.Context(), userID, request.InviteeID, id, domain.ProjectMemberRole(request.Role))
+	if (request.InviteeID > 0) == (request.Email != "") {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	var invite *domain.Invite
+	if request.Email != "" {
+		invite, err = h.inviteService.CreateByEmail(r.Context(), userID, id, request.Email, domain.ProjectMemberRole(request.Role))
+	} else {
+		invite, err = h.inviteService.Create(r.Context(), userID, request.InviteeID, id, domain.ProjectMemberRole(request.Role))
+	}
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)

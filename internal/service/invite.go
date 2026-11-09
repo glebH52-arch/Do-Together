@@ -42,6 +42,18 @@ func (s *InviteService) Create(ctx context.Context, inviterID, inviteeID, projec
 	}
 	return invite, nil
 }
+
+func (s *InviteService) CreateByEmail(ctx context.Context, inviterID, projectID int, email string, role domain.ProjectMemberRole) (*domain.Invite, error) {
+	email, err := domain.NormalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	inviteeID, err := s.repository.FindInviteeIDByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	return s.Create(ctx, inviterID, inviteeID, projectID, role)
+}
 func (s *InviteService) Accept(ctx context.Context, inviteeID, inviteID int) error {
 	if inviteeID <= 0 {
 		return repository.ErrUserNotFound
