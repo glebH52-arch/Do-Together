@@ -3,8 +3,8 @@ import { ApiError, request, type Project, type Task, type User } from './api';
 import { ProjectMembers } from './ProjectMembers';
 
 type LoadState = { kind: 'loading' } | { kind: 'denied' } | { kind: 'error' } | { kind: 'ready'; project: Project; tasks: Task[] };
-const labels: Record<Task['status'], string> = { todo: 'К выполнению', in_progress: 'В работе', done: 'Готово' };
-const columns: Task['status'][] = ['todo', 'in_progress', 'done'];
+const labels: Record<Task['status'], string> = { todo: 'К выполнению', in_progress: 'В работе', review: 'На проверке', done: 'Готово' };
+const columns: Task['status'][] = ['todo', 'in_progress', 'review', 'done'];
 
 function taskCount(count: number) {
   const lastTwo = count % 100;

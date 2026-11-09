@@ -8,15 +8,25 @@ import (
 )
 
 type Task struct {
-	ID          int
-	ProjectID   int
-	Title       string
-	Description string
-	CreatedBy   int
-	Status      TaskStatus
-	CreatedAt   time.Time
-	UpdatedAt   *time.Time
-	DueAt       *time.Time
+	ID           int
+	UUID         string
+	Key          string
+	Number       int64
+	ProjectID    int
+	Title        string
+	Description  string
+	Type         string
+	Priority     string
+	AssigneeID   *int
+	AssigneeName *string
+	CreatedBy    int
+	CreatorName  string
+	Status       TaskStatus
+	Position     int64
+	CreatedAt    time.Time
+	UpdatedAt    *time.Time
+	DueAt        *time.Time
+	CompletedAt  *time.Time
 }
 
 type TaskStatus string
@@ -24,6 +34,7 @@ type TaskStatus string
 const (
 	TaskStatusTodo       TaskStatus = "todo"
 	TaskStatusInProgress TaskStatus = "in_progress"
+	TaskStatusReview     TaskStatus = "review"
 	TaskStatusDone       TaskStatus = "done"
 )
 
@@ -48,6 +59,7 @@ func validateStatus(status TaskStatus) error {
 	switch status {
 	case TaskStatusTodo,
 		TaskStatusInProgress,
+		TaskStatusReview,
 		TaskStatusDone:
 		return nil
 	default:
@@ -80,6 +92,8 @@ func NewTask(createdBy, projectID int, title, Description string, dueAt *time.Ti
 		ProjectID:   projectID,
 		Title:       taskTitle,
 		Description: taskDescription,
+		Type:        "task",
+		Priority:    "medium",
 		Status:      TaskStatusTodo,
 		CreatedAt:   time.Now(),
 		DueAt:       taskDueAt,

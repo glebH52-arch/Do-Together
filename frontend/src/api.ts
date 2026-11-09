@@ -26,7 +26,7 @@ export type Task = {
   title: string;
   description: string;
   created_by: number;
-  status: 'todo' | 'in_progress' | 'done';
+  status: 'todo' | 'in_progress' | 'review' | 'done';
   created_at: string;
   update_at?: string;
   due_at?: string | null;

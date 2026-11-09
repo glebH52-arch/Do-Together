@@ -58,7 +58,7 @@ button.link { margin-top: 20px; padding: 0; background: transparent; color: #285
 .task-heading { margin-bottom: 18px; }
 .task-heading h2 { margin: 0; }
 .board-empty { color: #65748a; margin-bottom: 18px; }
-.kanban-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+.kanban-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
 .kanban-column { min-width: 0; min-height: 270px; padding: 14px; border: 1px solid #dbe3ee; border-radius: 16px; background: #edf2f8; transition: background 150ms, border-color 150ms; }
 .kanban-column.drop-target { border-color: #285bd1; background: #e2ecff; }
 .column-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 2px 16px; font-size: 16px; }

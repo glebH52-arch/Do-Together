@@ -33,7 +33,7 @@ func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) 
 		return nil, err
 	}
 
-	err := t.pool.QueryRow(ctx, stmtCreateTask, task.ProjectID, task.Title, task.Description, task.CreatedBy, task.Status, task.CreatedAt, task.DueAt).Scan(&task.ID)
+	err := t.pool.QueryRow(ctx, stmtCreateTask, task.ProjectID, task.Title, task.Description, task.CreatedBy, task.Status, task.CreatedAt, task.DueAt).Scan(&task.ID, &task.UUID, &task.Key, &task.Number, &task.Position, &task.CreatorName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, repository.ErrProjectNotFound
@@ -63,7 +63,8 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID in
 	for rows.Next() {
 		var task domain.Task
 
-		err := rows.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.CreatedBy, &task.Status, &task.CreatedAt, &task.UpdatedAt, &task.DueAt)
+		err := rows.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.CreatedBy, &task.Status, &task.CreatedAt, &task.UpdatedAt, &task.DueAt,
+			&task.UUID, &task.Key, &task.Type, &task.Priority, &task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.Position, &task.CompletedAt)
 		if err != nil {
 			return nil, fmt.Errorf("rows scan: %w", err)
 		}
@@ -147,6 +148,15 @@ func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID
 			&task.CreatedAt,
 			&task.UpdatedAt,
 			&task.DueAt,
+			&task.UUID,
+			&task.Key,
+			&task.Type,
+			&task.Priority,
+			&task.AssigneeID,
+			&task.AssigneeName,
+			&task.CreatorName,
+			&task.Position,
+			&task.CompletedAt,
 		)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
