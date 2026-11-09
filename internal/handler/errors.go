@@ -72,6 +72,10 @@ func statusFromError(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, repository.ErrInvalidTaskSearch):
 		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidTaskType), errors.Is(err, domain.ErrInvalidTaskPriority), errors.Is(err, domain.ErrInvalidAssigneeID):
+		return http.StatusBadRequest
+	case errors.Is(err, repository.ErrAssigneeNotMember):
+		return http.StatusBadRequest
 	case errors.Is(err, repository.ErrTaskNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, repository.ErrCommentNotFound):

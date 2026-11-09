@@ -23,27 +23,13 @@ func (t *PostgresTaskRepository) Search(ctx context.Context, actorID, projectID 
 		return nil, fmt.Errorf("invalid task search options")
 	}
 	var member bool
-	if err := t.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`, projectID, actorID).Scan(&member); err != nil {
+	if err := t.pool.QueryRow(ctx, sqlTaskMemberExists, projectID, actorID).Scan(&member); err != nil {
 		return nil, fmt.Errorf("check task search access: %w", err)
 	}
 	if !member {
 		return nil, repository.ErrProjectNotFound
 	}
-	query := `SELECT t.id, t.project_id, t.title, t.description, t.created_by, t.status,
-		t.created_at, t.updated_at, t.due_at, t.uuid::text, t.task_key, t.task_type, t.priority,
-		t.assignee_id, assignee.username, creator.username, t.position, t.completed_at
-		FROM tasks AS t JOIN users AS creator ON creator.id = t.created_by
-		LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
-		WHERE t.project_id = $1
-		AND EXISTS (SELECT 1 FROM project_members AS pm WHERE pm.project_id = t.project_id AND pm.user_id = $2)
-		AND ($3::text = '' OR t.title ILIKE '%' || $3 || '%' OR t.description ILIKE '%' || $3 || '%')
-		AND ($4::text = '' OR t.status = $4)
-		AND ($5::int IS NULL OR t.assignee_id = $5)
-		AND ($6::text = '' OR t.priority = $6)
-		AND ($7::text = '' OR t.task_type = $7)
-		AND ($8::timestamptz IS NULL OR t.due_at <= $8)
-		AND ($9::timestamptz IS NULL OR t.due_at >= $9)
-		ORDER BY ` + column + ` ` + options.Direction + ` NULLS LAST, t.id ASC LIMIT $10 OFFSET $11`
+	query := sqlSearchTasksBase + column + ` ` + options.Direction + ` NULLS LAST, t.id ASC LIMIT $10 OFFSET $11`
 	rows, err := t.pool.Query(ctx, query, projectID, actorID, options.Query, options.Status, options.AssigneeID,
 		options.Priority, options.Type, options.DueBefore, options.DueAfter, options.Limit, options.Offset)
 	if err != nil {
