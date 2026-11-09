@@ -7,7 +7,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware.AuthMiddleware, pm *ProjectMemberHandler, ih *InviteHandler, t *TaskHandler, h *HealthHandler) http.Handler {
+func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware.AuthMiddleware, pm *ProjectMemberHandler, ih *InviteHandler, t *TaskHandler, c *TaskCommentHandler, h *HealthHandler) http.Handler {
 	router := mux.NewRouter()
 	router.Path("/projects").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(p.CreateProject)))
 	router.Path("/projects/{id}").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(p.GetProject)))
@@ -31,6 +31,10 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 	router.Path("/projects/{id}/tasks/{taskID}").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(t.GetTaskByID)))
 	router.Path("/projects/{id}/tasks/{taskID}").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(t.UpdateTask)))
 	router.Path("/projects/{id}/tasks/{taskID}").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(t.RemoveTask)))
+	router.Path("/projects/{id}/tasks/{taskID}/comments").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(c.Create)))
+	router.Path("/projects/{id}/tasks/{taskID}/comments").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(c.List)))
+	router.Path("/projects/{id}/tasks/{taskID}/comments/{commentID}").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(c.Update)))
+	router.Path("/projects/{id}/tasks/{taskID}/comments/{commentID}").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(c.Delete)))
 
 	router.Path("/users").Methods(http.MethodPost).HandlerFunc(u.CreateUser)
 	router.Path("/auth/login").Methods(http.MethodPost).HandlerFunc(a.Login)
