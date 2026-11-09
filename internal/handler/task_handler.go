@@ -261,3 +261,72 @@ func (t *TaskHandler) GetTaskByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func (t *TaskHandler) GetBoard(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	projectID, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil || projectID <= 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	tasks, err := t.taskService.ListTask(r.Context(), userID, projectID)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	board := boardResponse{
+		Todo: make([]taskResponse, 0), InProgress: make([]taskResponse, 0),
+		Review: make([]taskResponse, 0), Done: make([]taskResponse, 0),
+	}
+	for _, task := range tasks {
+		response := taskToResponse(task)
+		switch task.Status {
+		case domain.TaskStatusTodo:
+			board.Todo = append(board.Todo, response)
+		case domain.TaskStatusInProgress:
+			board.InProgress = append(board.InProgress, response)
+		case domain.TaskStatusReview:
+			board.Review = append(board.Review, response)
+		case domain.TaskStatusDone:
+			board.Done = append(board.Done, response)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(board); err != nil {
+		return
+	}
+}
+
+func (t *TaskHandler) MoveTask(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID <= 0 {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	projectID, projectErr := strconv.Atoi(mux.Vars(r)["id"])
+	taskID, taskErr := strconv.Atoi(mux.Vars(r)["taskID"])
+	if projectErr != nil || taskErr != nil || projectID <= 0 || taskID <= 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	var request taskMoveRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.ExpectedPosition <= 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	if request.BeforeTaskID != nil && *request.BeforeTaskID <= 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	if err := t.taskService.MoveTask(r.Context(), userID, projectID, taskID, request.ExpectedStatus, request.ExpectedPosition, request.BeforeTaskID); err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

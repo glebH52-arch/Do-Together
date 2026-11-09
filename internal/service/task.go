@@ -120,3 +120,13 @@ func (s *TaskService) GetTaskByID(ctx context.Context, actorID, projectID, taskI
 	}
 	return task, nil
 }
+
+func (s *TaskService) MoveTask(ctx context.Context, actorID, projectID, taskID int, expectedStatus domain.TaskStatus, expectedPosition int64, beforeTaskID *int) error {
+	if actorID <= 0 || projectID <= 0 || taskID <= 0 || expectedPosition <= 0 {
+		return repository.ErrTaskNotFound
+	}
+	if expectedStatus != domain.TaskStatusTodo && expectedStatus != domain.TaskStatusInProgress && expectedStatus != domain.TaskStatusReview && expectedStatus != domain.TaskStatusDone {
+		return domain.ErrInvalidTaskStatus
+	}
+	return s.repository.Move(ctx, actorID, projectID, taskID, expectedStatus, expectedPosition, beforeTaskID)
+}

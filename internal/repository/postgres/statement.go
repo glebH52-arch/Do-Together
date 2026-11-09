@@ -244,7 +244,7 @@ WHERE t.project_id = $1
       WHERE pm.project_id = t.project_id
         AND pm.user_id = $2
   )
-ORDER BY t.id
+ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review' THEN 2 ELSE 3 END, t.position, t.id
 	`,
 
 	stmtGetTaskByID: `
