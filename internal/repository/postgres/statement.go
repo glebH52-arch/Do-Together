@@ -198,10 +198,15 @@ FOR UPDATE
 	    SELECT id, $2, $3, $4, $5, $6, $7, task_number,
 	           'DOT-' || id || '-' || task_number, task_number * 1024
 	    FROM allocation
-	    RETURNING id, uuid::text, task_key, task_number, position
+	    RETURNING id, uuid::text, task_key, task_number, position, title, description, status, created_by
+	), history AS (
+	    INSERT INTO task_history(task_id, actor_id, action, new_values)
+	    SELECT id, created_by, 'created', jsonb_build_object('title', title, 'description', description, 'status', status)
+	    FROM inserted RETURNING task_id
 	)
 	SELECT inserted.id, inserted.uuid, inserted.task_key, inserted.task_number, inserted.position, creator.username
-	FROM inserted JOIN users AS creator ON creator.id = $4
+	FROM inserted JOIN history ON history.task_id = inserted.id
+	JOIN users AS creator ON creator.id = $4
 	`,
 
 	stmtUpdateTask: `
@@ -210,12 +215,16 @@ FOR UPDATE
     title = $1,
     description = $2,
     status = $3,
-    updated_at = $4
+    updated_at = $4,
+	completed_at = $10
 	FROM project_members pm
 	WHERE target.id = $5
 	AND target.project_id = $6
 	AND pm.project_id = target.project_id
-	AND pm.user_id = $7;
+	AND pm.user_id = $7
+	AND target.status = $8
+	AND target.updated_at IS NOT DISTINCT FROM $9
+	RETURNING target.id;
 	`,
 
 	stmtGetListTask: `

@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"do-together/internal/domain"
+	"do-together/internal/repository"
+	"errors"
 	"os"
 	"strconv"
 	"sync"
@@ -56,5 +58,38 @@ func TestConcurrentTaskKeys(t *testing.T) {
 		if err != nil || loaded.Key != task.Key || loaded.CreatorName == "" {
 			t.Fatalf("read task %d: task=%+v err=%v", task.ID, loaded, err)
 		}
+	}
+	before := *tasks[0]
+	next := domain.TaskStatusInProgress
+	if err := tasks[0].Update(nil, nil, &next); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Update(ctx, &before, tasks[0], actorID, projectID); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM task_history WHERE task_id = $1`, tasks[0].ID).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("history count: %d, err=%v", count, err)
+	}
+	if err := repo.Update(ctx, &before, tasks[0], actorID, projectID); !errors.Is(err, repository.ErrTaskConflict) {
+		t.Fatalf("stale update: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `CREATE FUNCTION test_reject_task_history() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced history failure'; END $$`); err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Exec(ctx, `DROP FUNCTION IF EXISTS test_reject_task_history() CASCADE`)
+	if _, err := pool.Exec(ctx, `CREATE TRIGGER test_reject_task_history BEFORE INSERT ON task_history FOR EACH ROW EXECUTE FUNCTION test_reject_task_history()`); err != nil {
+		t.Fatal(err)
+	}
+	before = *tasks[1]
+	if err := tasks[1].Update(nil, nil, &next); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Update(ctx, &before, tasks[1], actorID, projectID); err == nil {
+		t.Fatal("history failure did not roll back task update")
+	}
+	loaded, err := repo.GetByID(ctx, actorID, projectID, tasks[1].ID)
+	if err != nil || loaded.Status != domain.TaskStatusTodo {
+		t.Fatalf("task changed despite history failure: task=%+v err=%v", loaded, err)
 	}
 }
