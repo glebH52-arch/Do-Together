@@ -187,15 +187,21 @@ WHERE id = $1
 FOR UPDATE
 	`,
 	stmtCreateTask: `
-	INSERT INTO tasks(project_id,title,description,created_by,status,created_at,due_at)
-	SELECT $1,$2,$3,$4,$5,$6,$7
-	WHERE EXISTS (
-	SELECT 1
-    FROM project_members AS pm
-	WHERE pm.project_id = $1
-	AND pm.user_id = $4
+	WITH allocation AS (
+	    UPDATE projects AS p
+	    SET next_task_number = next_task_number + 1
+	    WHERE p.id = $1
+	      AND EXISTS (SELECT 1 FROM project_members AS pm WHERE pm.project_id = p.id AND pm.user_id = $4)
+	    RETURNING p.id, p.next_task_number - 1 AS task_number
+	), inserted AS (
+	    INSERT INTO tasks(project_id, title, description, created_by, status, created_at, due_at, task_number, task_key, position)
+	    SELECT id, $2, $3, $4, $5, $6, $7, task_number,
+	           'DOT-' || id || '-' || task_number, task_number * 1024
+	    FROM allocation
+	    RETURNING id, uuid::text, task_key, task_number, position
 	)
-	RETURNING id
+	SELECT inserted.id, inserted.uuid, inserted.task_key, inserted.task_number, inserted.position, creator.username
+	FROM inserted JOIN users AS creator ON creator.id = $4
 	`,
 
 	stmtUpdateTask: `
@@ -216,8 +222,12 @@ FOR UPDATE
 	SELECT
     t.id, t.project_id, t.title, t.description,
     t.created_by, t.status, t.created_at,
-    t.updated_at, t.due_at
+	    t.updated_at, t.due_at, t.uuid::text, t.task_key,
+	    t.task_type, t.priority, t.assignee_id, assignee.username,
+	    creator.username, t.position, t.completed_at
 FROM tasks AS t
+	JOIN users AS creator ON creator.id = t.created_by
+	LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
 WHERE t.project_id = $1
   AND EXISTS (
       SELECT 1
@@ -232,8 +242,12 @@ ORDER BY t.id
 	SELECT
 		t.id, t.project_id, t.title, t.description,
 		t.created_by, t.status, t.created_at,
-		t.updated_at, t.due_at
+		t.updated_at, t.due_at, t.uuid::text, t.task_key,
+		t.task_type, t.priority, t.assignee_id, assignee.username,
+		creator.username, t.position, t.completed_at
 	FROM tasks AS t
+	JOIN users AS creator ON creator.id = t.created_by
+	LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
 	WHERE t.id = $1
 	  AND t.project_id = $2
 	  AND EXISTS (
