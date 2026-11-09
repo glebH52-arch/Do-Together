@@ -67,8 +67,11 @@ func run() error {
 	taskRepository := postgres.NewTaskRepository(pool)
 	taskService := service.NewTaskService(taskRepository)
 	taskHandler := handler.NewTaskHandler(taskService)
+	commentRepository := postgres.NewTaskCommentRepository(pool)
+	commentService := service.NewTaskCommentService(commentRepository)
+	commentHandler := handler.NewTaskCommentHandler(commentService)
 	healthHandler := handler.NewHealthHandler(pool, redisClient, 2*time.Second)
-	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware, projectMemberHandler, inviteHandler, taskHandler, healthHandler)
+	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware, projectMemberHandler, inviteHandler, taskHandler, commentHandler, healthHandler)
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           router,
