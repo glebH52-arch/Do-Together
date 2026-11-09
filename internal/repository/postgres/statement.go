@@ -192,21 +192,23 @@ FOR UPDATE
 	    SET next_task_number = next_task_number + 1
 	    WHERE p.id = $1
 	      AND EXISTS (SELECT 1 FROM project_members AS pm WHERE pm.project_id = p.id AND pm.user_id = $4)
+	      AND ($10::int IS NULL OR EXISTS (SELECT 1 FROM project_members AS assigned WHERE assigned.project_id = p.id AND assigned.user_id = $10))
 	    RETURNING p.id, p.next_task_number - 1 AS task_number
 	), inserted AS (
-	    INSERT INTO tasks(project_id, title, description, created_by, status, created_at, due_at, task_number, task_key, position)
+	    INSERT INTO tasks(project_id, title, description, created_by, status, created_at, due_at, task_number, task_key, position, task_type, priority, assignee_id)
 	    SELECT id, $2, $3, $4, $5, $6, $7, task_number,
-	           'DOT-' || id || '-' || task_number, task_number * 1024
+	           'DOT-' || id || '-' || task_number, task_number * 1024, $8, $9, $10
 	    FROM allocation
-	    RETURNING id, uuid::text, task_key, task_number, position, title, description, status, created_by
+	    RETURNING id, uuid::text, task_key, task_number, position, title, description, status, created_by, task_type, priority, assignee_id, due_at
 	), history AS (
 	    INSERT INTO task_history(task_id, actor_id, action, new_values)
-	    SELECT id, created_by, 'created', jsonb_build_object('title', title, 'description', description, 'status', status)
+	    SELECT id, created_by, 'created', jsonb_build_object('title', title, 'description', description, 'status', status, 'type', task_type, 'priority', priority, 'assignee_id', assignee_id, 'due_at', due_at)
 	    FROM inserted RETURNING task_id
 	)
-	SELECT inserted.id, inserted.uuid, inserted.task_key, inserted.task_number, inserted.position, creator.username
+	SELECT inserted.id, inserted.uuid, inserted.task_key, inserted.task_number, inserted.position, creator.username, assignee.username
 	FROM inserted JOIN history ON history.task_id = inserted.id
 	JOIN users AS creator ON creator.id = $4
+	LEFT JOIN users AS assignee ON assignee.id = inserted.assignee_id
 	`,
 
 	stmtUpdateTask: `
@@ -216,7 +218,11 @@ FOR UPDATE
     description = $2,
     status = $3,
     updated_at = $4,
-	completed_at = $10
+	completed_at = $10,
+	task_type = $11,
+	priority = $12,
+	assignee_id = $13,
+	due_at = $14
 	FROM project_members pm
 	WHERE target.id = $5
 	AND target.project_id = $6
@@ -224,6 +230,7 @@ FOR UPDATE
 	AND pm.user_id = $7
 	AND target.status = $8
 	AND target.updated_at IS NOT DISTINCT FROM $9
+	AND ($13::int IS NULL OR EXISTS (SELECT 1 FROM project_members AS assigned WHERE assigned.project_id = target.project_id AND assigned.user_id = $13))
 	RETURNING target.id;
 	`,
 
@@ -290,3 +297,66 @@ func prepareStatements(ctx context.Context, conn *pgx.Conn) error {
 	}
 	return nil
 }
+
+const (
+	sqlTaskMemberExists  = `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`
+	sqlTaskHistoryInsert = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
+		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`
+	sqlLockProjectMember = `SELECT p.id FROM projects AS p JOIN project_members AS pm ON pm.project_id = p.id
+		WHERE p.id = $1 AND pm.user_id = $2 FOR UPDATE OF p, pm`
+	sqlLockTaskPosition  = `SELECT status, position FROM tasks WHERE id = $1 AND project_id = $2 FOR UPDATE`
+	sqlListTaskPositions = `SELECT id, position FROM tasks WHERE project_id = $1 AND status = $2 ORDER BY position, id FOR UPDATE`
+	sqlSetTaskPosition   = `UPDATE tasks SET position = $1 WHERE id = $2`
+	sqlTouchTask         = `UPDATE tasks SET updated_at = NOW() WHERE id = $1`
+	sqlTaskMoveHistory   = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
+		VALUES ($1, $2, 'edited', jsonb_build_object('position', $3::bigint), jsonb_build_object('position', $4::bigint))`
+	sqlCreateTaskComment = `WITH inserted AS (
+		INSERT INTO task_comments(task_id, author_id, body)
+		SELECT t.id, $3, $4 FROM tasks AS t
+		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $3
+		WHERE t.project_id = $1 AND t.id = $2
+		RETURNING id, task_id, author_id, body, created_at, updated_at
+	), history AS (
+		INSERT INTO task_history(task_id, actor_id, action, new_values)
+		SELECT task_id, author_id, 'comment_created', jsonb_build_object('comment_id', id, 'body', body)
+		FROM inserted RETURNING task_id
+	)
+	SELECT i.id, i.task_id, i.author_id, u.username, i.body, i.created_at, i.updated_at
+	FROM inserted AS i JOIN history AS h ON h.task_id = i.task_id
+	JOIN users AS u ON u.id = i.author_id`
+	sqlCommentAccess = `SELECT EXISTS (SELECT 1 FROM tasks AS t
+		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $3
+		WHERE t.project_id = $1 AND t.id = $2)`
+	sqlListTaskComments = `SELECT c.id, c.task_id, c.author_id, u.username, c.body, c.created_at, c.updated_at
+		FROM task_comments AS c JOIN users AS u ON u.id = c.author_id
+		WHERE c.task_id = $1 ORDER BY c.created_at, c.id LIMIT $2 OFFSET $3`
+	sqlLockOwnComment = `SELECT c.body FROM task_comments AS c
+		JOIN tasks AS t ON t.id = c.task_id
+		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $4
+		WHERE c.id = $1 AND c.task_id = $2 AND t.project_id = $3 AND c.author_id = $4 FOR UPDATE OF c`
+	sqlUpdateOwnComment   = `UPDATE task_comments SET body = $1, updated_at = NOW() WHERE id = $2`
+	sqlCommentEditHistory = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
+		VALUES ($1, $2, 'edited', jsonb_build_object('comment_id', $3::bigint, 'body', $4::text), jsonb_build_object('comment_id', $3::bigint, 'body', $5::text))`
+	sqlDeleteOwnComment = `DELETE FROM task_comments AS c USING tasks AS t, project_members AS pm
+		WHERE c.id = $1 AND c.task_id = $2 AND c.author_id = $4
+		AND t.id = c.task_id AND t.project_id = $3
+		AND pm.project_id = t.project_id AND pm.user_id = $4
+		RETURNING c.body`
+	sqlCommentDeleteHistory = `INSERT INTO task_history(task_id, actor_id, action, old_values)
+		VALUES ($1, $2, 'comment_deleted', jsonb_build_object('comment_id', $3::bigint, 'body', $4::text))`
+	sqlSearchTasksBase = `SELECT t.id, t.project_id, t.title, t.description, t.created_by, t.status,
+		t.created_at, t.updated_at, t.due_at, t.uuid::text, t.task_key, t.task_type, t.priority,
+		t.assignee_id, assignee.username, creator.username, t.position, t.completed_at
+		FROM tasks AS t JOIN users AS creator ON creator.id = t.created_by
+		LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
+		WHERE t.project_id = $1
+		AND EXISTS (SELECT 1 FROM project_members AS pm WHERE pm.project_id = t.project_id AND pm.user_id = $2)
+		AND ($3::text = '' OR t.title ILIKE '%' || $3 || '%' OR t.description ILIKE '%' || $3 || '%')
+		AND ($4::text = '' OR t.status = $4)
+		AND ($5::int IS NULL OR t.assignee_id = $5)
+		AND ($6::text = '' OR t.priority = $6)
+		AND ($7::text = '' OR t.task_type = $7)
+		AND ($8::timestamptz IS NULL OR t.due_at <= $8)
+		AND ($9::timestamptz IS NULL OR t.due_at >= $9)
+		ORDER BY `
+)

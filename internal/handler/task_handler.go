@@ -50,7 +50,7 @@ func (t *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	task, err := t.taskService.CreateTask(r.Context(), userID, projectID, request.Title, request.Description, request.DueAt)
+	task, err := t.taskService.CreateTaskWithOptions(r.Context(), userID, projectID, request.Title, request.Description, request.DueAt, request.Type, request.Priority, request.AssigneeID)
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
@@ -154,7 +154,8 @@ func (t *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if request.Title == nil &&
 		request.Description == nil &&
-		request.Status == nil {
+		request.Status == nil && request.Type == nil && request.Priority == nil &&
+		request.AssigneeID == nil && request.DueAt == nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -164,7 +165,20 @@ func (t *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		value := domain.TaskStatus(*request.Status)
 		status = &value
 	}
-	err = t.taskService.UpdateTask(r.Context(), userID, projectID, taskID, request.Title, request.Description, status)
+	assignee, err := parseOptionalInt(request.AssigneeID)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	dueAt, err := parseOptionalTime(request.DueAt)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	err = t.taskService.UpdateTaskChanges(r.Context(), userID, projectID, taskID, domain.TaskChanges{
+		Title: request.Title, Description: request.Description, Status: status,
+		Type: request.Type, Priority: request.Priority, AssigneeID: assignee, DueAt: dueAt,
+	})
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,10 +34,23 @@ func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if task.AssigneeID != nil {
+		var member bool
+		if err := t.pool.QueryRow(ctx, sqlTaskMemberExists, task.ProjectID, *task.AssigneeID).Scan(&member); err != nil {
+			return nil, err
+		}
+		if !member {
+			return nil, repository.ErrAssigneeNotMember
+		}
+	}
 
-	err := t.pool.QueryRow(ctx, stmtCreateTask, task.ProjectID, task.Title, task.Description, task.CreatedBy, task.Status, task.CreatedAt, task.DueAt).Scan(&task.ID, &task.UUID, &task.Key, &task.Number, &task.Position, &task.CreatorName)
+	err := t.pool.QueryRow(ctx, stmtCreateTask, task.ProjectID, task.Title, task.Description, task.CreatedBy, task.Status, task.CreatedAt, task.DueAt,
+		task.Type, task.Priority, task.AssigneeID).Scan(&task.ID, &task.UUID, &task.Key, &task.Number, &task.Position, &task.CreatorName, &task.AssigneeName)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			if task.AssigneeID != nil {
+				return nil, repository.ErrAssigneeNotMember
+			}
 			return nil, repository.ErrProjectNotFound
 		}
 		return nil, fmt.Errorf("create task: %w", err)
@@ -55,7 +69,7 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID in
 		return nil, err
 	}
 	var member bool
-	if err := t.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`, projectID, actorID).Scan(&member); err != nil {
+	if err := t.pool.QueryRow(ctx, sqlTaskMemberExists, projectID, actorID).Scan(&member); err != nil {
 		return nil, fmt.Errorf("check task list access: %w", err)
 	}
 	if !member {
@@ -102,15 +116,30 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 		return fmt.Errorf("begin task update: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if task.AssigneeID != nil {
+		var member bool
+		if err := tx.QueryRow(ctx, sqlTaskMemberExists, projectID, *task.AssigneeID).Scan(&member); err != nil {
+			return err
+		}
+		if !member {
+			return repository.ErrAssigneeNotMember
+		}
+	}
 	var updatedID int
 	err = tx.QueryRow(ctx, stmtUpdateTask, task.Title, task.Description, task.Status, task.UpdatedAt,
-		task.ID, projectID, actorID, before.Status, before.UpdatedAt, task.CompletedAt).Scan(&updatedID)
+		task.ID, projectID, actorID, before.Status, before.UpdatedAt, task.CompletedAt,
+		task.Type, task.Priority, task.AssigneeID, task.DueAt).Scan(&updatedID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.ErrTaskConflict
 	}
 	if err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}
+	type historyChange struct {
+		action    string
+		old, next map[string]any
+	}
+	changes := make([]historyChange, 0, 5)
 	oldValues := make(map[string]any)
 	newValues := make(map[string]any)
 	if before.Title != task.Title {
@@ -119,23 +148,36 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 	if before.Description != task.Description {
 		oldValues["description"], newValues["description"] = before.Description, task.Description
 	}
-	action := "edited"
+	if before.Type != task.Type {
+		oldValues["type"], newValues["type"] = before.Type, task.Type
+	}
+	if len(oldValues) > 0 {
+		changes = append(changes, historyChange{"edited", oldValues, newValues})
+	}
 	if before.Status != task.Status {
-		oldValues["status"], newValues["status"] = before.Status, task.Status
-		action = "status_changed"
+		changes = append(changes, historyChange{"status_changed", map[string]any{"status": before.Status}, map[string]any{"status": task.Status}})
 	}
-	oldJSON, err := json.Marshal(oldValues)
-	if err != nil {
-		return err
+	if before.Priority != task.Priority {
+		changes = append(changes, historyChange{"priority_changed", map[string]any{"priority": before.Priority}, map[string]any{"priority": task.Priority}})
 	}
-	newJSON, err := json.Marshal(newValues)
-	if err != nil {
-		return err
+	if !reflect.DeepEqual(before.AssigneeID, task.AssigneeID) {
+		changes = append(changes, historyChange{"assignee_changed", map[string]any{"assignee_id": before.AssigneeID}, map[string]any{"assignee_id": task.AssigneeID}})
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`, updatedID, actorID, action, string(oldJSON), string(newJSON))
-	if err != nil {
-		return fmt.Errorf("record task history: %w", err)
+	if !reflect.DeepEqual(before.DueAt, task.DueAt) {
+		changes = append(changes, historyChange{"due_at_changed", map[string]any{"due_at": before.DueAt}, map[string]any{"due_at": task.DueAt}})
+	}
+	for _, change := range changes {
+		oldJSON, err := json.Marshal(change.old)
+		if err != nil {
+			return err
+		}
+		newJSON, err := json.Marshal(change.next)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, sqlTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)); err != nil {
+			return fmt.Errorf("record task history: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit task update: %w", err)

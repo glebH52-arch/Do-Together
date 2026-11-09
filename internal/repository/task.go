@@ -12,6 +12,7 @@ var (
 	ErrNilTask           = errors.New("nil task")
 	ErrTaskConflict      = errors.New("task changed concurrently")
 	ErrInvalidTaskSearch = errors.New("invalid task search options")
+	ErrAssigneeNotMember = errors.New("assignee is not a project member")
 )
 
 type TaskRepository interface {

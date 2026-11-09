@@ -2,6 +2,8 @@ package handler
 
 import (
 	"do-together/internal/domain"
+	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -9,12 +11,50 @@ type taskRequest struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	DueAt       *time.Time `json:"due_at,omitempty"`
+	Type        *string    `json:"type,omitempty"`
+	Priority    *string    `json:"priority,omitempty"`
+	AssigneeID  *int       `json:"assignee_id,omitempty"`
 }
 
 type taskUpdateRequest struct {
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Status      *string `json:"status,omitempty"`
+	Title       *string         `json:"title,omitempty"`
+	Description *string         `json:"description,omitempty"`
+	Status      *string         `json:"status,omitempty"`
+	Type        *string         `json:"type,omitempty"`
+	Priority    *string         `json:"priority,omitempty"`
+	AssigneeID  json.RawMessage `json:"assignee_id"`
+	DueAt       json.RawMessage `json:"due_at"`
+}
+
+func parseOptionalInt(raw json.RawMessage) (domain.OptionalInt, error) {
+	if raw == nil {
+		return domain.OptionalInt{}, nil
+	}
+	if string(raw) == "null" {
+		return domain.OptionalInt{Set: true}, nil
+	}
+	var value int
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return domain.OptionalInt{}, err
+	}
+	return domain.OptionalInt{Set: true, Value: &value}, nil
+}
+
+func parseOptionalTime(raw json.RawMessage) (domain.OptionalTime, error) {
+	if raw == nil {
+		return domain.OptionalTime{}, nil
+	}
+	if string(raw) == "null" {
+		return domain.OptionalTime{Set: true}, nil
+	}
+	var value time.Time
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return domain.OptionalTime{}, err
+	}
+	if value.IsZero() {
+		return domain.OptionalTime{}, errors.New("invalid due_at")
+	}
+	return domain.OptionalTime{Set: true, Value: &value}, nil
 }
 
 type taskMoveRequest struct {

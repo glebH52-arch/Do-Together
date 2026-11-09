@@ -5,6 +5,7 @@ import (
 	"do-together/internal/domain"
 	"do-together/internal/repository"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"testing"
@@ -26,7 +27,8 @@ func TestTaskSearch(t *testing.T) {
 	defer pool.Close()
 	repo := NewTaskRepository(pool)
 	due := time.Now().Add(24 * time.Hour)
-	task, err := domain.NewTask(actorID, projectID, "Needle-unique-search", "Searchable description", &due)
+	title := fmt.Sprintf("Needle-%d", time.Now().UnixNano())
+	task, err := domain.NewTask(actorID, projectID, title, "Searchable description", &due)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +36,7 @@ func TestTaskSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := repository.TaskSearchOptions{Query: "Needle-unique-search", Status: "todo", Priority: "medium", Type: "task", DueBefore: &due, Sort: "created_at", Direction: "desc", Limit: 1}
+	options := repository.TaskSearchOptions{Query: title, Status: "todo", Priority: "medium", Type: "task", DueBefore: &due, Sort: "created_at", Direction: "desc", Limit: 1}
 	tasks, err := repo.Search(ctx, actorID, projectID, options)
 	if err != nil || len(tasks) != 1 || tasks[0].ID != task.ID {
 		t.Fatalf("search: %+v %v", tasks, err)

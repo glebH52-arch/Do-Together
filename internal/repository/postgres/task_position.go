@@ -25,8 +25,7 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 	}
 	defer tx.Rollback(ctx)
 	var lockedProject int
-	err = tx.QueryRow(ctx, `SELECT p.id FROM projects AS p JOIN project_members AS pm ON pm.project_id = p.id
-		WHERE p.id = $1 AND pm.user_id = $2 FOR UPDATE OF p, pm`, projectID, actorID).Scan(&lockedProject)
+	err = tx.QueryRow(ctx, sqlLockProjectMember, projectID, actorID).Scan(&lockedProject)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrProjectNotFound
@@ -35,7 +34,7 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 	}
 	var status domain.TaskStatus
 	var oldPosition int64
-	err = tx.QueryRow(ctx, `SELECT status, position FROM tasks WHERE id = $1 AND project_id = $2 FOR UPDATE`, taskID, projectID).Scan(&status, &oldPosition)
+	err = tx.QueryRow(ctx, sqlLockTaskPosition, taskID, projectID).Scan(&status, &oldPosition)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrTaskNotFound
@@ -45,7 +44,7 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 	if status != expectedStatus || oldPosition != expectedPosition {
 		return repository.ErrTaskConflict
 	}
-	rows, err := tx.Query(ctx, `SELECT id, position FROM tasks WHERE project_id = $1 AND status = $2 ORDER BY position, id FOR UPDATE`, projectID, status)
+	rows, err := tx.Query(ctx, sqlListTaskPositions, projectID, status)
 	if err != nil {
 		return fmt.Errorf("read task positions: %w", err)
 	}
@@ -131,20 +130,19 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 			if item.id == taskID {
 				newPosition = position
 			}
-			if _, err := tx.Exec(ctx, `UPDATE tasks SET position = $1 WHERE id = $2`, position, item.id); err != nil {
+			if _, err := tx.Exec(ctx, sqlSetTaskPosition, position, item.id); err != nil {
 				return fmt.Errorf("rebalance task positions: %w", err)
 			}
 		}
 	} else {
-		if _, err := tx.Exec(ctx, `UPDATE tasks SET position = $1 WHERE id = $2`, newPosition, taskID); err != nil {
+		if _, err := tx.Exec(ctx, sqlSetTaskPosition, newPosition, taskID); err != nil {
 			return fmt.Errorf("move task: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `UPDATE tasks SET updated_at = NOW() WHERE id = $1`, taskID); err != nil {
+	if _, err := tx.Exec(ctx, sqlTouchTask, taskID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, 'edited', jsonb_build_object('position', $3::bigint), jsonb_build_object('position', $4::bigint))`,
+	if _, err := tx.Exec(ctx, sqlTaskMoveHistory,
 		taskID, actorID, oldPosition, newPosition); err != nil {
 		return fmt.Errorf("record task move: %w", err)
 	}
