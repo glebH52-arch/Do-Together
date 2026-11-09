@@ -17,6 +17,19 @@ type taskUpdateRequest struct {
 	Status      *string `json:"status,omitempty"`
 }
 
+type taskMoveRequest struct {
+	ExpectedStatus   domain.TaskStatus `json:"expected_status"`
+	ExpectedPosition int64             `json:"expected_position"`
+	BeforeTaskID     *int              `json:"before_task_id"`
+}
+
+type boardResponse struct {
+	Todo       []taskResponse `json:"todo"`
+	InProgress []taskResponse `json:"in_progress"`
+	Review     []taskResponse `json:"review"`
+	Done       []taskResponse `json:"done"`
+}
+
 type taskResponse struct {
 	ID           int        `json:"id"`
 	UUID         string     `json:"uuid"`

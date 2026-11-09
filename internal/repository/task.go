@@ -18,4 +18,5 @@ type TaskRepository interface {
 	Update(ctx context.Context, before, after *domain.Task, actorID, projectID int) error
 	Remove(ctx context.Context, taskID, actorID, projectID int) error
 	GetByID(ctx context.Context, actorID, projectID, taskID int) (*domain.Task, error)
+	Move(ctx context.Context, actorID, projectID, taskID int, expectedStatus domain.TaskStatus, expectedPosition int64, beforeTaskID *int) error
 }

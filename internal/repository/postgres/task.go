@@ -54,6 +54,13 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID in
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	var member bool
+	if err := t.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`, projectID, actorID).Scan(&member); err != nil {
+		return nil, fmt.Errorf("check task list access: %w", err)
+	}
+	if !member {
+		return nil, repository.ErrProjectNotFound
+	}
 	rows, err := t.pool.Query(ctx, stmtGetListTask, projectID, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("query list task: %w", err)
