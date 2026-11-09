@@ -13,6 +13,7 @@ export function ProjectMembers({ projectID, user, accessToken }: { projectID: nu
   const [confirmID, setConfirmID] = useState<number | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteeID, setInviteeID] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteError, setInviteError] = useState('');
@@ -65,14 +66,15 @@ export function ProjectMembers({ projectID, user, accessToken }: { projectID: nu
   async function sendInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (inviteBusy) return;
+    const email = inviteEmail.trim();
     const id = Number(inviteeID);
-    if (!Number.isSafeInteger(id) || id <= 0) { setInviteError('Введите положительный ID пользователя.'); return; }
+    if ((email !== '' && inviteeID !== '') || (email === '' && inviteeID === '')) { setInviteError('Укажите email или ID пользователя.'); return; }
+    if (email === '' && (!Number.isSafeInteger(id) || id <= 0)) { setInviteError('Введите положительный ID пользователя.'); return; }
     setInviteBusy(true); setInviteError(''); setNotice('');
     try {
-      // TODO: заменить ввод ID поиском по email или username, когда backend предоставит такой endpoint.
-      await createInvite(projectID, { invitee_id: id, role: inviteRole }, accessToken);
-      setInviteOpen(false); setInviteeID(''); setInviteRole('member');
-      setNotice(`Приглашение отправлено пользователю #${id}`);
+      await createInvite(projectID, email !== '' ? { email, role: inviteRole } : { invitee_id: id, role: inviteRole }, accessToken);
+      setInviteOpen(false); setInviteeID(''); setInviteEmail(''); setInviteRole('member');
+      setNotice('Приглашение отправлено');
       setReload(value => value + 1);
     } catch (cause) { setInviteError(cause instanceof Error ? cause.message : 'Не удалось отправить приглашение.'); }
     finally { setInviteBusy(false); }
@@ -99,9 +101,10 @@ export function ProjectMembers({ projectID, user, accessToken }: { projectID: nu
       </div>
     </article>)}</div>)}
     {inviteOpen && <div className="dialog-backdrop"><div className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="invite-dialog-title"><h2 id="invite-dialog-title">Пригласить участника</h2><form onSubmit={event => void sendInvite(event)}>
-      <label>Введите ID пользователя<input autoFocus type="number" min="1" step="1" value={inviteeID} onChange={event => setInviteeID(event.target.value)} required /></label>
+      <label>Email зарегистрированного пользователя<input autoFocus type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} disabled={inviteeID !== ''} /></label>
+      <label>Или ID пользователя<input type="number" min="1" step="1" value={inviteeID} onChange={event => setInviteeID(event.target.value)} disabled={inviteEmail !== ''} /></label>
       <label>Роль<select value={inviteRole} onChange={event => setInviteRole(event.target.value as 'admin' | 'member')}><option value="member">Участник</option><option value="admin">Администратор</option></select></label>
-      <p className="muted">Поиск по имени или email пока недоступен.</p>
+      <p className="muted">Пригласить можно зарегистрированного пользователя. Подтверждение email пока не требуется.</p>
       {inviteError && <p className="error" role="alert">{inviteError}</p>}
       <div className="dialog-actions"><button type="button" className="secondary" disabled={inviteBusy} onClick={() => setInviteOpen(false)}>Отмена</button><button type="submit" disabled={inviteBusy}>{inviteBusy ? 'Отправляем…' : 'Отправить приглашение'}</button></div>
     </form></div></div>}

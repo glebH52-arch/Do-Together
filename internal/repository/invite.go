@@ -8,6 +8,7 @@ import (
 
 type InviteRepository interface {
 	Create(ctx context.Context, invite *domain.Invite) error
+	FindInviteeIDByEmail(ctx context.Context, email string) (int, error)
 	List(ctx context.Context, inviteeID int) ([]*domain.Invite, error)
 	Accept(ctx context.Context, inviteeID, inviteID int, now time.Time) error
 	Decline(ctx context.Context, inviteeID, inviteID int, now time.Time) error

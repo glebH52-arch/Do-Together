@@ -47,12 +47,12 @@ export function Invites({ accessToken, state, onReload, onOpenProject, onBack }:
       {pending.length > 0 && <div className="invite-list">{pending.map(invite => {
         const expired = new Date(invite.expires_at).getTime() <= Date.now();
         return <article className="invite-card" key={invite.id}>
-          <div><h2>Проект #{invite.project_id}</h2><p>От: Пользователь #{invite.inviter_id}</p><p>Роль: {roleLabels[invite.role]}</p><p>Приглашение: {date(invite.created_at)}</p><p className={expired ? 'overdue' : ''}>Действует до: {date(invite.expires_at)}{expired ? ' · срок истёк' : ''}</p></div>
+          <div><h2>{invite.project_title || `Проект #${invite.project_id}`}</h2><p>От: {invite.inviter_name || `Пользователь #${invite.inviter_id}`}</p><p>Роль: {roleLabels[invite.role]}</p><p>Приглашение: {date(invite.created_at)}</p><p className={expired ? 'overdue' : ''}>Действует до: {date(invite.expires_at)}{expired ? ' · срок истёк' : ''}</p></div>
           {error?.id === invite.id && <p className="error" role="alert">{error.message}</p>}
           {!expired && <div className="invite-actions"><button disabled={busyID !== null} onClick={() => void decide(invite, 'accept')}>{busyID === invite.id ? 'Подождите…' : 'Принять'}</button><button className="secondary" disabled={busyID !== null} onClick={() => void decide(invite, 'decline')}>Отклонить</button></div>}
         </article>;
       })}</div>}
-      {history.length > 0 && <section className="invite-history"><h2>История приглашений</h2><div className="invite-list">{history.map(invite => <article className="invite-card" key={invite.id}><h3>Проект #{invite.project_id}</h3><p>От: Пользователь #{invite.inviter_id}</p><p>Статус: {statusLabels[invite.status]}</p></article>)}</div></section>}
+      {history.length > 0 && <section className="invite-history"><h2>История приглашений</h2><div className="invite-list">{history.map(invite => <article className="invite-card" key={invite.id}><h3>{invite.project_title || `Проект #${invite.project_id}`}</h3><p>От: {invite.inviter_name || `Пользователь #${invite.inviter_id}`}</p><p>Статус: {statusLabels[invite.status]}</p></article>)}</div></section>}
     </>}
   </main>;
 }

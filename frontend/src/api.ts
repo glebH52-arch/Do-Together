@@ -36,6 +36,8 @@ export type Invite = {
   id: number;
   project_id: number;
   inviter_id: number;
+  inviter_name?: string;
+  project_title?: string;
   invitee_id: number;
   role: 'admin' | 'member';
   status: 'pending' | 'accepted' | 'declined' | 'expired';
@@ -52,7 +54,7 @@ export type ProjectMember = {
   joined_at: string;
 };
 
-export type CreateInviteRequest = { invitee_id: number; role: 'admin' | 'member' };
+export type CreateInviteRequest = { invitee_id: number; role: 'admin' | 'member' } | { email: string; role: 'admin' | 'member' };
 
 export const refreshKey = 'do-together-demo-refresh';
 let session: Tokens | null = null;

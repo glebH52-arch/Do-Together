@@ -51,6 +51,8 @@ func validateEmail(email string) (string, error) {
 	return email, nil
 }
 
+func NormalizeEmail(email string) (string, error) { return validateEmail(email) }
+
 func NewUser(username string, email string, passwordHash string) (*User, error) {
 	username, err := validateUsername(username)
 	if err != nil {
