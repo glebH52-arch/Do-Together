@@ -70,6 +70,8 @@ func statusFromError(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, repository.ErrTaskConflict):
 		return http.StatusConflict
+	case errors.Is(err, repository.ErrInvalidTaskSearch):
+		return http.StatusBadRequest
 	case errors.Is(err, repository.ErrTaskNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, repository.ErrCommentNotFound):

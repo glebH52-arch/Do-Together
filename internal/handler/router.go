@@ -26,6 +26,7 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 
 	router.Path("/projects/{id}/tasks").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(t.CreateTask)))
 	router.Path("/projects/{id}/tasks").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(t.ListTask)))
+	router.Path("/projects/{id}/tasks/search").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(t.SearchTasks)))
 	router.Path("/projects/{id}/board").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(t.GetBoard)))
 	router.Path("/projects/{id}/tasks/{taskID}/position").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(t.MoveTask)))
 	router.Path("/projects/{id}/tasks/{taskID}").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(t.GetTaskByID)))
