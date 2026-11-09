@@ -203,7 +203,7 @@ export function ProjectDetail({ projectID, user, accessToken, onBack }: {
         <label>Описание<textarea value={description} onChange={event => setDescription(event.target.value)} maxLength={1000} rows={4} required /></label>
         {dialog === 'create' ? <label>Срок (необязательно)<input type="datetime-local" value={dueAt} onChange={event => setDueAt(event.target.value)} /></label>
           : <label>Статус<select value={status} onChange={event => setStatus(event.target.value as Task['status'])}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
-        {dialog !== 'create' && <p className="readonly-due">Срок: {dialog.due_at ? formatDue(dialog.due_at) : 'Без срока'} · изменить срок в текущей версии API нельзя.</p>}
+        {dialog !== 'create' && <p className="readonly-due">Срок: {dialog.due_at ? formatDue(dialog.due_at) : 'Без срока'} · редактирование срока пока не добавлено в этот интерфейс.</p>}
         {error && <p className="error" role="alert">{error}</p>}
         <div className="dialog-actions"><button className="secondary" type="button" disabled={busy} onClick={() => setDialog(null)}>Отмена</button><button type="submit" disabled={busy}>{busy ? 'Сохраняем…' : dialog === 'create' ? 'Создать задачу' : 'Сохранить'}</button></div>
         {dialog !== 'create' && dialog.created_by === user.id && <button className="delete-link" type="button" disabled={busy} onClick={() => { setError(''); setConfirmDelete(true); }}>Удалить задачу</button>}
