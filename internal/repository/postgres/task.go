@@ -175,8 +175,24 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, sqlTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)); err != nil {
+		var historyID int64
+		if err := tx.QueryRow(ctx, sqlTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)).Scan(&historyID); err != nil {
 			return fmt.Errorf("record task history: %w", err)
+		}
+		var kind string
+		var first, second *int
+		switch change.action {
+		case "assignee_changed":
+			kind, first = "assignment_changed", task.AssigneeID
+		case "status_changed":
+			kind, first, second = "status_changed", &task.CreatedBy, task.AssigneeID
+		case "due_at_changed":
+			kind, first, second = "due_at_changed", &task.CreatedBy, task.AssigneeID
+		}
+		if kind != "" {
+			if _, err := tx.Exec(ctx, sqlInsertTaskNotifications, projectID, task.ID, historyID, kind, actorID, first, second); err != nil {
+				return fmt.Errorf("record task notification: %w", err)
+			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

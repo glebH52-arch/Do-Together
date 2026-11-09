@@ -203,7 +203,13 @@ FOR UPDATE
 	), history AS (
 	    INSERT INTO task_history(task_id, actor_id, action, new_values)
 	    SELECT id, created_by, 'created', jsonb_build_object('title', title, 'description', description, 'status', status, 'type', task_type, 'priority', priority, 'assignee_id', assignee_id, 'due_at', due_at)
-	    FROM inserted RETURNING task_id
+	    FROM inserted RETURNING id, task_id
+	), notification AS (
+	    INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
+	    SELECT inserted.assignee_id, $1, inserted.id, history.id, 'assignment_changed', jsonb_build_object('task_id', inserted.id)
+	    FROM inserted JOIN history ON history.task_id = inserted.id
+	    WHERE inserted.assignee_id IS NOT NULL AND inserted.assignee_id <> inserted.created_by
+	    ON CONFLICT DO NOTHING RETURNING id
 	)
 	SELECT inserted.id, inserted.uuid, inserted.task_key, inserted.task_number, inserted.position, creator.username, assignee.username
 	FROM inserted JOIN history ON history.task_id = inserted.id
@@ -301,8 +307,16 @@ func prepareStatements(ctx context.Context, conn *pgx.Conn) error {
 const (
 	sqlTaskMemberExists  = `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`
 	sqlTaskHistoryInsert = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)`
-	sqlLockProjectMember = `SELECT p.id FROM projects AS p JOIN project_members AS pm ON pm.project_id = p.id
+		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb) RETURNING id`
+	sqlInsertTaskNotifications = `INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
+		SELECT DISTINCT recipient.id, $1::int, $2::int, $3::bigint, $4::text, jsonb_build_object('task_id', $2::int)
+		FROM (VALUES ($6::int), ($7::int)) AS recipient(id)
+		WHERE recipient.id IS NOT NULL AND recipient.id <> $5::int
+		ON CONFLICT DO NOTHING`
+	sqlListNotifications = `SELECT id, recipient_id, project_id, task_id, invite_id, kind, payload, created_at, read_at
+		FROM notifications WHERE recipient_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`
+	sqlMarkNotificationRead = `UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 AND recipient_id = $2`
+	sqlLockProjectMember    = `SELECT p.id FROM projects AS p JOIN project_members AS pm ON pm.project_id = p.id
 		WHERE p.id = $1 AND pm.user_id = $2 FOR UPDATE OF p, pm`
 	sqlLockTaskPosition  = `SELECT status, position FROM tasks WHERE id = $1 AND project_id = $2 FOR UPDATE`
 	sqlListTaskPositions = `SELECT id, position FROM tasks WHERE project_id = $1 AND status = $2 ORDER BY position, id FOR UPDATE`
