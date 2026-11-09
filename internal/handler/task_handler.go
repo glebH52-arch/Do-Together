@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"do-together/internal/domain"
 	"do-together/internal/middleware"
+	"do-together/internal/repository"
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 )
@@ -329,4 +331,68 @@ func (t *TaskHandler) MoveTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (t *TaskHandler) SearchTasks(w http.ResponseWriter, r *http.Request) {
+	actorID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || actorID <= 0 {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	projectID, err := strconv.Atoi(mux.Vars(r)["id"])
+	if err != nil || projectID <= 0 {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	query := r.URL.Query()
+	options := repository.TaskSearchOptions{
+		Query: query.Get("q"), Status: query.Get("status"), Priority: query.Get("priority"),
+		Type: query.Get("type"), Sort: query.Get("sort"), Direction: query.Get("direction"),
+		Limit: 20, Offset: 0,
+	}
+	if value := query.Get("limit"); value != "" {
+		options.Limit, err = strconv.Atoi(value)
+	}
+	if err == nil {
+		if value := query.Get("offset"); value != "" {
+			options.Offset, err = strconv.Atoi(value)
+		}
+	}
+	if err == nil {
+		if value := query.Get("assignee_id"); value != "" {
+			var id int
+			id, err = strconv.Atoi(value)
+			options.AssigneeID = &id
+		}
+	}
+	if err == nil {
+		if value := query.Get("due_before"); value != "" {
+			var due time.Time
+			due, err = time.Parse(time.RFC3339, value)
+			options.DueBefore = &due
+		}
+	}
+	if err == nil {
+		if value := query.Get("due_after"); value != "" {
+			var due time.Time
+			due, err = time.Parse(time.RFC3339, value)
+			options.DueAfter = &due
+		}
+	}
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+	tasks, err := t.taskService.SearchTasks(r.Context(), actorID, projectID, options)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	response := make([]taskResponse, 0, len(tasks))
+	for _, task := range tasks {
+		response = append(response, taskToResponse(task))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
 }

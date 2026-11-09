@@ -4,7 +4,9 @@ import (
 	"context"
 	"do-together/internal/domain"
 	"do-together/internal/repository"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 type TaskService struct {
@@ -129,4 +131,42 @@ func (s *TaskService) MoveTask(ctx context.Context, actorID, projectID, taskID i
 		return domain.ErrInvalidTaskStatus
 	}
 	return s.repository.Move(ctx, actorID, projectID, taskID, expectedStatus, expectedPosition, beforeTaskID)
+}
+
+func (s *TaskService) SearchTasks(ctx context.Context, actorID, projectID int, options repository.TaskSearchOptions) ([]*domain.Task, error) {
+	if actorID <= 0 || projectID <= 0 || options.Limit <= 0 || options.Limit > 100 || options.Offset < 0 {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	options.Query = strings.TrimSpace(options.Query)
+	if utf8.RuneCountInString(options.Query) > 200 {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.Status != "" && options.Status != string(domain.TaskStatusTodo) && options.Status != string(domain.TaskStatusInProgress) && options.Status != string(domain.TaskStatusReview) && options.Status != string(domain.TaskStatusDone) {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.Priority != "" && options.Priority != "low" && options.Priority != "medium" && options.Priority != "high" && options.Priority != "critical" {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.Type != "" && options.Type != "task" && options.Type != "bug" && options.Type != "feature" {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.AssigneeID != nil && *options.AssigneeID <= 0 {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.DueBefore != nil && options.DueAfter != nil && options.DueBefore.Before(*options.DueAfter) {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.Sort == "" {
+		options.Sort = "created_at"
+	}
+	if options.Direction == "" {
+		options.Direction = "desc"
+	}
+	if options.Sort != "created_at" && options.Sort != "due_at" && options.Sort != "title" && options.Sort != "priority" {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	if options.Direction != "asc" && options.Direction != "desc" {
+		return nil, repository.ErrInvalidTaskSearch
+	}
+	return s.repository.Search(ctx, actorID, projectID, options)
 }
