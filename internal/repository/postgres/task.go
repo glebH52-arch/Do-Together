@@ -36,7 +36,7 @@ func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) 
 	}
 	if task.AssigneeID != nil {
 		var member bool
-		if err := t.pool.QueryRow(ctx, sqlTaskMemberExists, task.ProjectID, *task.AssigneeID).Scan(&member); err != nil {
+		if err := t.pool.QueryRow(ctx, stmtTaskMemberExists, task.ProjectID, *task.AssigneeID).Scan(&member); err != nil {
 			return nil, err
 		}
 		if !member {
@@ -69,7 +69,7 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID in
 		return nil, err
 	}
 	var member bool
-	if err := t.pool.QueryRow(ctx, sqlTaskMemberExists, projectID, actorID).Scan(&member); err != nil {
+	if err := t.pool.QueryRow(ctx, stmtTaskMemberExists, projectID, actorID).Scan(&member); err != nil {
 		return nil, fmt.Errorf("check task list access: %w", err)
 	}
 	if !member {
@@ -118,7 +118,7 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 	defer tx.Rollback(ctx)
 	if task.AssigneeID != nil {
 		var member bool
-		if err := tx.QueryRow(ctx, sqlTaskMemberExists, projectID, *task.AssigneeID).Scan(&member); err != nil {
+		if err := tx.QueryRow(ctx, stmtTaskMemberExists, projectID, *task.AssigneeID).Scan(&member); err != nil {
 			return err
 		}
 		if !member {
@@ -176,7 +176,7 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 			return err
 		}
 		var historyID int64
-		if err := tx.QueryRow(ctx, sqlTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)).Scan(&historyID); err != nil {
+		if err := tx.QueryRow(ctx, stmtTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)).Scan(&historyID); err != nil {
 			return fmt.Errorf("record task history: %w", err)
 		}
 		var kind string
@@ -190,7 +190,7 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 			kind, first, second = "due_at_changed", &task.CreatedBy, task.AssigneeID
 		}
 		if kind != "" {
-			if _, err := tx.Exec(ctx, sqlInsertTaskNotifications, projectID, task.ID, historyID, kind, actorID, first, second); err != nil {
+			if _, err := tx.Exec(ctx, stmtInsertTaskNotifications, projectID, task.ID, historyID, kind, actorID, first, second); err != nil {
 				return fmt.Errorf("record task notification: %w", err)
 			}
 		}

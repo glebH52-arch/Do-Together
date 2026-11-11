@@ -18,7 +18,7 @@ func NewNotificationRepository(pool *pgxpool.Pool) *PostgresNotificationReposito
 }
 
 func (r *PostgresNotificationRepository) List(ctx context.Context, userID, limit, offset int) ([]*domain.Notification, error) {
-	rows, err := r.pool.Query(ctx, sqlListNotifications, userID, limit, offset)
+	rows, err := r.pool.Query(ctx, stmtListNotifications, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list notifications: %w", err)
 	}
@@ -36,7 +36,7 @@ func (r *PostgresNotificationRepository) List(ctx context.Context, userID, limit
 }
 
 func (r *PostgresNotificationRepository) MarkRead(ctx context.Context, userID int, notificationID int64) error {
-	tag, err := r.pool.Exec(ctx, sqlMarkNotificationRead, notificationID, userID)
+	tag, err := r.pool.Exec(ctx, stmtMarkNotificationRead, notificationID, userID)
 	if err != nil {
 		return fmt.Errorf("mark notification read: %w", err)
 	}
