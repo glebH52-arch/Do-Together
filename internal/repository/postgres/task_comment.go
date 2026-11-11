@@ -23,7 +23,7 @@ func NewTaskCommentRepository(pool *pgxpool.Pool) *PostgresTaskCommentRepository
 
 func (r *PostgresTaskCommentRepository) Create(ctx context.Context, actorID, projectID, taskID int, body string) (*domain.TaskComment, error) {
 	comment := &domain.TaskComment{}
-	err := r.pool.QueryRow(ctx, sqlCreateTaskComment, projectID, taskID, actorID, body).
+	err := r.pool.QueryRow(ctx, stmtCreateTaskComment, projectID, taskID, actorID, body).
 		Scan(&comment.ID, &comment.TaskID, &comment.AuthorID, &comment.AuthorName, &comment.Body, &comment.CreatedAt, &comment.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repository.ErrTaskNotFound
@@ -36,14 +36,14 @@ func (r *PostgresTaskCommentRepository) Create(ctx context.Context, actorID, pro
 
 func (r *PostgresTaskCommentRepository) List(ctx context.Context, actorID, projectID, taskID, limit, offset int) ([]*domain.TaskComment, error) {
 	var allowed bool
-	err := r.pool.QueryRow(ctx, sqlCommentAccess, projectID, taskID, actorID).Scan(&allowed)
+	err := r.pool.QueryRow(ctx, stmtCommentAccess, projectID, taskID, actorID).Scan(&allowed)
 	if err != nil {
 		return nil, fmt.Errorf("check comment access: %w", err)
 	}
 	if !allowed {
 		return nil, repository.ErrTaskNotFound
 	}
-	rows, err := r.pool.Query(ctx, sqlListTaskComments, taskID, limit, offset)
+	rows, err := r.pool.Query(ctx, stmtListTaskComments, taskID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list comments: %w", err)
 	}
@@ -66,7 +66,7 @@ func (r *PostgresTaskCommentRepository) Update(ctx context.Context, actorID, pro
 	}
 	defer tx.Rollback(ctx)
 	var oldBody string
-	err = tx.QueryRow(ctx, sqlLockOwnComment,
+	err = tx.QueryRow(ctx, stmtLockOwnComment,
 		commentID, taskID, projectID, actorID).Scan(&oldBody)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.ErrCommentNotFound
@@ -77,10 +77,10 @@ func (r *PostgresTaskCommentRepository) Update(ctx context.Context, actorID, pro
 	if oldBody == body {
 		return nil
 	}
-	if _, err := tx.Exec(ctx, sqlUpdateOwnComment, body, commentID); err != nil {
+	if _, err := tx.Exec(ctx, stmtUpdateOwnComment, body, commentID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, sqlCommentEditHistory,
+	if _, err := tx.Exec(ctx, stmtCommentEditHistory,
 		taskID, actorID, commentID, oldBody, body); err != nil {
 		return err
 	}
@@ -94,14 +94,14 @@ func (r *PostgresTaskCommentRepository) Delete(ctx context.Context, actorID, pro
 	}
 	defer tx.Rollback(ctx)
 	var oldBody string
-	err = tx.QueryRow(ctx, sqlDeleteOwnComment, commentID, taskID, projectID, actorID).Scan(&oldBody)
+	err = tx.QueryRow(ctx, stmtDeleteOwnComment, commentID, taskID, projectID, actorID).Scan(&oldBody)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.ErrCommentNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, sqlCommentDeleteHistory,
+	if _, err := tx.Exec(ctx, stmtCommentDeleteHistory,
 		taskID, actorID, commentID, oldBody); err != nil {
 		return err
 	}

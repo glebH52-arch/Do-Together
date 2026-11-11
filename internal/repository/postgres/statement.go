@@ -8,32 +8,52 @@ import (
 )
 
 const (
-	stmtCreateUser            = "create_user"
-	stmtGetUserByID           = "get_user_by_id"
-	stmtGetUserByEmail        = "get_user_by_email"
-	stmtCreateProject         = "create_project"
-	stmtCreateProjectMember   = "create_project_member"
-	stmtGetProjectByID        = "get_project_by_id"
-	stmtGetListProjects       = "get_list_projects"
-	stmtUpdateProject         = "update_project"
-	stmtGetListProjectMembers = "get_list_project_members"
-	stmtUpdateRole            = "update_role"
-	stmtAddProjectMember      = "add_project_member"
-	stmtRemoveProjectMember   = "remove_project_member"
-	stmtCreateInvite          = "create_invite"
-	stmtGetListInvites        = "get_list_invites"
-	stmtAcceptInvite          = "accept_invite"
-	stmtDeclineInvite         = "decline_invite"
-	stmtGetInviteForUpdate    = "get_invite_for_update"
-	stmtFindInviteeByEmail    = "find_invitee_by_email"
-	stmtExpireStaleInvites    = "expire_stale_invites"
-	stmtCanInvite             = "can_invite"
-	stmtIsProjectMember       = "is_project_member"
-	stmtCreateTask            = "create_task"
-	stmtGetListTask           = "get_list_task"
-	stmtGetTaskByID           = "get_task_by_id"
-	stmtUpdateTask            = "update_task"
-	stmtRemoveTask            = "remove_task"
+	stmtCreateUser              = "create_user"
+	stmtGetUserByID             = "get_user_by_id"
+	stmtGetUserByEmail          = "get_user_by_email"
+	stmtCreateProject           = "create_project"
+	stmtCreateProjectMember     = "create_project_member"
+	stmtGetProjectByID          = "get_project_by_id"
+	stmtGetListProjects         = "get_list_projects"
+	stmtUpdateProject           = "update_project"
+	stmtGetListProjectMembers   = "get_list_project_members"
+	stmtUpdateRole              = "update_role"
+	stmtAddProjectMember        = "add_project_member"
+	stmtRemoveProjectMember     = "remove_project_member"
+	stmtCreateInvite            = "create_invite"
+	stmtGetListInvites          = "get_list_invites"
+	stmtAcceptInvite            = "accept_invite"
+	stmtDeclineInvite           = "decline_invite"
+	stmtGetInviteForUpdate      = "get_invite_for_update"
+	stmtFindInviteeByEmail      = "find_invitee_by_email"
+	stmtExpireStaleInvites      = "expire_stale_invites"
+	stmtCanInvite               = "can_invite"
+	stmtIsProjectMember         = "is_project_member"
+	stmtCreateTask              = "create_task"
+	stmtGetListTask             = "get_list_task"
+	stmtGetTaskByID             = "get_task_by_id"
+	stmtUpdateTask              = "update_task"
+	stmtRemoveTask              = "remove_task"
+	stmtTaskMemberExists        = "task_member_exists"
+	stmtTaskHistoryInsert       = "task_history_insert"
+	stmtInsertTaskNotifications = "insert_task_notifications"
+	stmtListNotifications       = "list_notifications"
+	stmtMarkNotificationRead    = "mark_notification_read"
+	stmtLockProjectMember       = "lock_project_member"
+	stmtLockTaskPosition        = "lock_task_position"
+	stmtListTaskPositions       = "list_task_positions"
+	stmtSetTaskPosition         = "set_task_position"
+	stmtTouchTask               = "touch_task"
+	stmtTaskMoveHistory         = "task_move_history"
+	stmtCreateTaskComment       = "create_task_comment"
+	stmtCommentAccess           = "comment_access"
+	stmtListTaskComments        = "list_task_comments"
+	stmtLockOwnComment          = "lock_own_comment"
+	stmtUpdateOwnComment        = "update_own_comment"
+	stmtCommentEditHistory      = "comment_edit_history"
+	stmtDeleteOwnComment        = "delete_own_comment"
+	stmtCommentDeleteHistory    = "comment_delete_history"
+	stmtSearchTasks             = "search_tasks"
 )
 
 var statements = map[string]string{
@@ -314,39 +334,26 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 	  AND pm.user_id = $3
 )
 	`,
-}
-
-func prepareStatements(ctx context.Context, conn *pgx.Conn) error {
-	for name, sql := range statements {
-		_, err := conn.Prepare(ctx, name, sql)
-		if err != nil {
-			return fmt.Errorf("prepare statement %s: %w", name, err)
-		}
-	}
-	return nil
-}
-
-const (
-	sqlTaskMemberExists  = `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`
-	sqlTaskHistoryInsert = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb) RETURNING id`
-	sqlInsertTaskNotifications = `INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
+	stmtTaskMemberExists: `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`,
+	stmtTaskHistoryInsert: `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
+		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb) RETURNING id`,
+	stmtInsertTaskNotifications: `INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
 		SELECT DISTINCT recipient.id, $1::int, $2::int, $3::bigint, $4::text, jsonb_build_object('task_id', $2::int)
 		FROM (VALUES ($6::int), ($7::int)) AS recipient(id)
 		WHERE recipient.id IS NOT NULL AND recipient.id <> $5::int
-		ON CONFLICT DO NOTHING`
-	sqlListNotifications = `SELECT id, recipient_id, project_id, task_id, invite_id, kind, payload, created_at, read_at
-		FROM notifications WHERE recipient_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`
-	sqlMarkNotificationRead = `UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 AND recipient_id = $2`
-	sqlLockProjectMember    = `SELECT p.id FROM projects AS p JOIN project_members AS pm ON pm.project_id = p.id
-		WHERE p.id = $1 AND pm.user_id = $2 FOR UPDATE OF p, pm`
-	sqlLockTaskPosition  = `SELECT status, position FROM tasks WHERE id = $1 AND project_id = $2 FOR UPDATE`
-	sqlListTaskPositions = `SELECT id, position FROM tasks WHERE project_id = $1 AND status = $2 ORDER BY position, id FOR UPDATE`
-	sqlSetTaskPosition   = `UPDATE tasks SET position = $1 WHERE id = $2`
-	sqlTouchTask         = `UPDATE tasks SET updated_at = NOW() WHERE id = $1`
-	sqlTaskMoveHistory   = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, 'edited', jsonb_build_object('position', $3::bigint), jsonb_build_object('position', $4::bigint))`
-	sqlCreateTaskComment = `WITH inserted AS (
+		ON CONFLICT DO NOTHING`,
+	stmtListNotifications: `SELECT id, recipient_id, project_id, task_id, invite_id, kind, payload, created_at, read_at
+		FROM notifications WHERE recipient_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+	stmtMarkNotificationRead: `UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 AND recipient_id = $2`,
+	stmtLockProjectMember: `SELECT p.id FROM projects AS p JOIN project_members AS pm ON pm.project_id = p.id
+		WHERE p.id = $1 AND pm.user_id = $2 FOR UPDATE OF p, pm`,
+	stmtLockTaskPosition:  `SELECT status, position FROM tasks WHERE id = $1 AND project_id = $2 FOR UPDATE`,
+	stmtListTaskPositions: `SELECT id, position FROM tasks WHERE project_id = $1 AND status = $2 ORDER BY position, id FOR UPDATE`,
+	stmtSetTaskPosition:   `UPDATE tasks SET position = $1 WHERE id = $2`,
+	stmtTouchTask:         `UPDATE tasks SET updated_at = NOW() WHERE id = $1`,
+	stmtTaskMoveHistory: `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
+		VALUES ($1, $2, 'edited', jsonb_build_object('position', $3::bigint), jsonb_build_object('position', $4::bigint))`,
+	stmtCreateTaskComment: `WITH inserted AS (
 		INSERT INTO task_comments(task_id, author_id, body)
 		SELECT t.id, $3, $4 FROM tasks AS t
 		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $3
@@ -359,28 +366,28 @@ const (
 	)
 	SELECT i.id, i.task_id, i.author_id, u.username, i.body, i.created_at, i.updated_at
 	FROM inserted AS i JOIN history AS h ON h.task_id = i.task_id
-	JOIN users AS u ON u.id = i.author_id`
-	sqlCommentAccess = `SELECT EXISTS (SELECT 1 FROM tasks AS t
+	JOIN users AS u ON u.id = i.author_id`,
+	stmtCommentAccess: `SELECT EXISTS (SELECT 1 FROM tasks AS t
 		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $3
-		WHERE t.project_id = $1 AND t.id = $2)`
-	sqlListTaskComments = `SELECT c.id, c.task_id, c.author_id, u.username, c.body, c.created_at, c.updated_at
+		WHERE t.project_id = $1 AND t.id = $2)`,
+	stmtListTaskComments: `SELECT c.id, c.task_id, c.author_id, u.username, c.body, c.created_at, c.updated_at
 		FROM task_comments AS c JOIN users AS u ON u.id = c.author_id
-		WHERE c.task_id = $1 ORDER BY c.created_at, c.id LIMIT $2 OFFSET $3`
-	sqlLockOwnComment = `SELECT c.body FROM task_comments AS c
+		WHERE c.task_id = $1 ORDER BY c.created_at, c.id LIMIT $2 OFFSET $3`,
+	stmtLockOwnComment: `SELECT c.body FROM task_comments AS c
 		JOIN tasks AS t ON t.id = c.task_id
 		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $4
-		WHERE c.id = $1 AND c.task_id = $2 AND t.project_id = $3 AND c.author_id = $4 FOR UPDATE OF c`
-	sqlUpdateOwnComment   = `UPDATE task_comments SET body = $1, updated_at = NOW() WHERE id = $2`
-	sqlCommentEditHistory = `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, 'edited', jsonb_build_object('comment_id', $3::bigint, 'body', $4::text), jsonb_build_object('comment_id', $3::bigint, 'body', $5::text))`
-	sqlDeleteOwnComment = `DELETE FROM task_comments AS c USING tasks AS t, project_members AS pm
+		WHERE c.id = $1 AND c.task_id = $2 AND t.project_id = $3 AND c.author_id = $4 FOR UPDATE OF c`,
+	stmtUpdateOwnComment: `UPDATE task_comments SET body = $1, updated_at = NOW() WHERE id = $2`,
+	stmtCommentEditHistory: `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
+		VALUES ($1, $2, 'edited', jsonb_build_object('comment_id', $3::bigint, 'body', $4::text), jsonb_build_object('comment_id', $3::bigint, 'body', $5::text))`,
+	stmtDeleteOwnComment: `DELETE FROM task_comments AS c USING tasks AS t, project_members AS pm
 		WHERE c.id = $1 AND c.task_id = $2 AND c.author_id = $4
 		AND t.id = c.task_id AND t.project_id = $3
 		AND pm.project_id = t.project_id AND pm.user_id = $4
-		RETURNING c.body`
-	sqlCommentDeleteHistory = `INSERT INTO task_history(task_id, actor_id, action, old_values)
-		VALUES ($1, $2, 'comment_deleted', jsonb_build_object('comment_id', $3::bigint, 'body', $4::text))`
-	sqlSearchTasksBase = `SELECT t.id, t.project_id, t.title, t.description, t.created_by, t.status,
+		RETURNING c.body`,
+	stmtCommentDeleteHistory: `INSERT INTO task_history(task_id, actor_id, action, old_values)
+		VALUES ($1, $2, 'comment_deleted', jsonb_build_object('comment_id', $3::bigint, 'body', $4::text))`,
+	stmtSearchTasks: `SELECT t.id, t.project_id, t.title, t.description, t.created_by, t.status,
 		t.created_at, t.updated_at, t.due_at, t.uuid::text, t.task_key, t.task_type, t.priority,
 		t.assignee_id, assignee.username, creator.username, t.position, t.completed_at
 		FROM tasks AS t JOIN users AS creator ON creator.id = t.created_by
@@ -394,5 +401,24 @@ const (
 		AND ($7::text = '' OR t.task_type = $7)
 		AND ($8::timestamptz IS NULL OR t.due_at <= $8)
 		AND ($9::timestamptz IS NULL OR t.due_at >= $9)
-		ORDER BY `
-)
+		ORDER BY
+		CASE WHEN $10::text = 'created_at' AND $11::text = 'asc' THEN t.created_at END ASC NULLS LAST,
+		CASE WHEN $10::text = 'created_at' AND $11::text = 'desc' THEN t.created_at END DESC NULLS LAST,
+		CASE WHEN $10::text = 'due_at' AND $11::text = 'asc' THEN t.due_at END ASC NULLS LAST,
+		CASE WHEN $10::text = 'due_at' AND $11::text = 'desc' THEN t.due_at END DESC NULLS LAST,
+		CASE WHEN $10::text = 'title' AND $11::text = 'asc' THEN t.title END ASC NULLS LAST,
+		CASE WHEN $10::text = 'title' AND $11::text = 'desc' THEN t.title END DESC NULLS LAST,
+		CASE WHEN $10::text = 'priority' AND $11::text = 'asc' THEN CASE t.priority WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 ELSE 3 END END ASC NULLS LAST,
+		CASE WHEN $10::text = 'priority' AND $11::text = 'desc' THEN CASE t.priority WHEN 'low' THEN 0 WHEN 'medium' THEN 1 WHEN 'high' THEN 2 ELSE 3 END END DESC NULLS LAST,
+		t.id ASC LIMIT $12 OFFSET $13`,
+}
+
+func prepareStatements(ctx context.Context, conn *pgx.Conn) error {
+	for name, sql := range statements {
+		_, err := conn.Prepare(ctx, name, sql)
+		if err != nil {
+			return fmt.Errorf("prepare statement %s: %w", name, err)
+		}
+	}
+	return nil
+}

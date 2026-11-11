@@ -25,7 +25,7 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 	}
 	defer tx.Rollback(ctx)
 	var lockedProject int
-	err = tx.QueryRow(ctx, sqlLockProjectMember, projectID, actorID).Scan(&lockedProject)
+	err = tx.QueryRow(ctx, stmtLockProjectMember, projectID, actorID).Scan(&lockedProject)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrProjectNotFound
@@ -34,7 +34,7 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 	}
 	var status domain.TaskStatus
 	var oldPosition int64
-	err = tx.QueryRow(ctx, sqlLockTaskPosition, taskID, projectID).Scan(&status, &oldPosition)
+	err = tx.QueryRow(ctx, stmtLockTaskPosition, taskID, projectID).Scan(&status, &oldPosition)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrTaskNotFound
@@ -44,7 +44,7 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 	if status != expectedStatus || oldPosition != expectedPosition {
 		return repository.ErrTaskConflict
 	}
-	rows, err := tx.Query(ctx, sqlListTaskPositions, projectID, status)
+	rows, err := tx.Query(ctx, stmtListTaskPositions, projectID, status)
 	if err != nil {
 		return fmt.Errorf("read task positions: %w", err)
 	}
@@ -130,19 +130,19 @@ func (t *PostgresTaskRepository) Move(ctx context.Context, actorID, projectID, t
 			if item.id == taskID {
 				newPosition = position
 			}
-			if _, err := tx.Exec(ctx, sqlSetTaskPosition, position, item.id); err != nil {
+			if _, err := tx.Exec(ctx, stmtSetTaskPosition, position, item.id); err != nil {
 				return fmt.Errorf("rebalance task positions: %w", err)
 			}
 		}
 	} else {
-		if _, err := tx.Exec(ctx, sqlSetTaskPosition, newPosition, taskID); err != nil {
+		if _, err := tx.Exec(ctx, stmtSetTaskPosition, newPosition, taskID); err != nil {
 			return fmt.Errorf("move task: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, sqlTouchTask, taskID); err != nil {
+	if _, err := tx.Exec(ctx, stmtTouchTask, taskID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, sqlTaskMoveHistory,
+	if _, err := tx.Exec(ctx, stmtTaskMoveHistory,
 		taskID, actorID, oldPosition, newPosition); err != nil {
 		return fmt.Errorf("record task move: %w", err)
 	}
