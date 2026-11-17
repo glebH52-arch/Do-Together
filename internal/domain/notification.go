@@ -17,3 +17,12 @@ type Notification struct {
 	CreatedAt   time.Time
 	ReadAt      *time.Time
 }
+
+type NotificationKind string
+
+const (
+	NotificationKindAssignmentChanged NotificationKind = "assignment_changed"
+	NotificationKindStatusChanged     NotificationKind = "status_changed"
+	NotificationKindDueAtChanged      NotificationKind = "due_at_changed"
+	NotificationKindInvitationLegacy  NotificationKind = "invitation"
+)

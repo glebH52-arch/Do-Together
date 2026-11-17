@@ -26,7 +26,8 @@ func TestTaskSearch(t *testing.T) {
 	}
 	defer pool.Close()
 	repo := NewTaskRepository(pool)
-	due := time.Now().Add(24 * time.Hour)
+	due := time.Now().Add(24 * time.Hour).UTC().Truncate(time.Microsecond)
+	dueBefore := due.Add(time.Microsecond)
 	title := fmt.Sprintf("Needle-%d", time.Now().UnixNano())
 	task, err := domain.NewTask(domain.NewTaskParams{
 		CreatedBy:   actorID,
@@ -42,11 +43,17 @@ func TestTaskSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := repository.TaskSearchOptions{Query: title, Status: "todo", Priority: "medium", Type: "task", DueBefore: &due, Sort: "created_at", Direction: "desc", Limit: 1}
+	options := repository.TaskSearchOptions{Query: title, Status: "todo", Priority: "medium", Type: "task", DueBefore: &dueBefore, DueAfter: &due, Sort: "created_at", Direction: "desc", Limit: 1}
 	tasks, err := repo.Search(ctx, actorID, projectID, options)
 	if err != nil || len(tasks) != 1 || tasks[0].ID != task.ID {
 		t.Fatalf("search: %+v %v", tasks, err)
 	}
+	options.DueBefore = &due
+	tasks, err = repo.Search(ctx, actorID, projectID, options)
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("exclusive due_before boundary: %+v %v", tasks, err)
+	}
+	options.DueBefore = &dueBefore
 	options.Offset = 1
 	tasks, err = repo.Search(ctx, actorID, projectID, options)
 	if err != nil || len(tasks) != 0 {

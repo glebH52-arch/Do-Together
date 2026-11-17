@@ -34,3 +34,10 @@ func (s *NotificationService) MarkRead(ctx context.Context, userID uuid.UUID, no
 	}
 	return s.repository.MarkRead(ctx, userID, notificationID)
 }
+
+func (s *NotificationService) CountUnread(ctx context.Context, userID uuid.UUID) (int, error) {
+	if userID == uuid.Nil() {
+		return 0, repository.ErrUserNotFound
+	}
+	return s.repository.CountUnread(ctx, userID)
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"do-together/internal/domain"
 	"do-together/internal/repository"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -29,7 +30,10 @@ func TestTaskNotifications(t *testing.T) {
 		(SELECT 1 FROM project_members WHERE project_id = $2 AND user_id = users.id) LIMIT 1`, actorID, projectID).Scan(&recipientID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `INSERT INTO project_members(project_id,user_id,role) VALUES ($1,$2,'member')`, projectID, recipientID); err != nil {
+	if _, err := pool.Exec(ctx, `DELETE FROM notifications WHERE recipient_id = $1`, recipientID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO project_members(project_id,user_id,role,joined_at) VALUES ($1,$2,'member',NOW())`, projectID, recipientID); err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Exec(ctx, `DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, recipientID)
@@ -62,6 +66,9 @@ func TestTaskNotifications(t *testing.T) {
 	if err := taskRepo.Update(ctx, &before, task, actorID, projectID); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO notifications(recipient_id,project_id,kind,payload) VALUES ($1,$2,'invitation','{}')`, recipientID, projectID); err != nil {
+		t.Fatal(err)
+	}
 	items, err := notificationRepo.List(ctx, recipientID, 100, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -69,10 +76,26 @@ func TestTaskNotifications(t *testing.T) {
 	counts := map[string]int{}
 	var notificationID uuid.UUID
 	for _, item := range items {
+		if item.Kind == string(domain.NotificationKindInvitationLegacy) {
+			t.Fatal("legacy invitation notification is visible")
+		}
 		if item.TaskID != nil && *item.TaskID == task.ID {
 			counts[item.Kind]++
 			notificationID = item.ID
+			var payload map[string]any
+			if err := json.Unmarshal(item.Payload, &payload); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"task_id", "task_title", "project_id", "project_title", "actor_id", "actor_name"} {
+				if payload[key] == nil || payload[key] == "" {
+					t.Fatalf("notification %s missing payload field %s: %s", item.Kind, key, item.Payload)
+				}
+			}
 		}
+	}
+	unread, err := notificationRepo.CountUnread(ctx, recipientID)
+	if err != nil || unread != 3 {
+		t.Fatalf("unread count excluding legacy invite: %d %v", unread, err)
 	}
 	for _, kind := range []string{"assignment_changed", "status_changed", "due_at_changed"} {
 		if counts[kind] != 1 {
@@ -84,6 +107,10 @@ func TestTaskNotifications(t *testing.T) {
 	}
 	if err := notificationRepo.MarkRead(ctx, recipientID, notificationID); err != nil {
 		t.Fatal(err)
+	}
+	unread, err = notificationRepo.CountUnread(ctx, recipientID)
+	if err != nil || unread != 2 {
+		t.Fatalf("unread count after mark read: %d %v", unread, err)
 	}
 	items, err = notificationRepo.List(ctx, recipientID, 100, 0)
 	if err != nil {

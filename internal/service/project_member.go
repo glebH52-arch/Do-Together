@@ -53,9 +53,14 @@ func (p *ProjectMemberService) Add(ctx context.Context, actorID uuid.UUID, proje
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err = p.authorizeActor(ctx, actorID, projectID)
+	projectMembers, err := p.authorizeActor(ctx, actorID, projectID)
 	if err != nil {
 		return err
+	}
+	for _, projectMember := range projectMembers {
+		if projectMember.UserID == actorID && projectMember.Role == domain.ProjectMemberRoleAdmin && role != domain.ProjectMemberRoleMember {
+			return repository.ErrForbidden
+		}
 	}
 
 	member, err := domain.NewProjectMember(projectID, userID, role)
@@ -89,7 +94,7 @@ func (p *ProjectMemberService) UpdateRole(ctx context.Context, actorID, projectI
 	if err != nil {
 		return err
 	}
-	err = p.authorizeTarget(ctx, projectMembers, targetUserID)
+	err = p.authorizeTarget(ctx, projectMembers, actorID, targetUserID, &role)
 	if err != nil {
 		return err
 	}
@@ -116,7 +121,7 @@ func (p *ProjectMemberService) Remove(ctx context.Context, actorID, projectID, t
 	if err != nil {
 		return err
 	}
-	err = p.authorizeTarget(ctx, projectMembers, targetUserID)
+	err = p.authorizeTarget(ctx, projectMembers, actorID, targetUserID, nil)
 	if err != nil {
 		return err
 	}
@@ -154,23 +159,37 @@ func (p *ProjectMemberService) authorizeActor(ctx context.Context, actorID uuid.
 	return nil, repository.ErrProjectNotFound
 
 }
-func (p *ProjectMemberService) authorizeTarget(ctx context.Context, projectMembers []*domain.ProjectMember, targetUserID uuid.UUID) error {
+func (p *ProjectMemberService) authorizeTarget(ctx context.Context, projectMembers []*domain.ProjectMember, actorID, targetUserID uuid.UUID, requestedRole *domain.ProjectMemberRole) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
+	var actorRole domain.ProjectMemberRole
+	var targetRole domain.ProjectMemberRole
+	var targetFound bool
 	for _, member := range projectMembers {
-		if member.UserID != targetUserID {
-			continue
+		if member.UserID == actorID {
+			actorRole = member.Role
 		}
-
-		if member.Role == domain.ProjectMemberRoleCreator {
+		if member.UserID == targetUserID {
+			targetRole = member.Role
+			targetFound = true
+		}
+	}
+	if !targetFound {
+		return repository.ErrProjectNotFound
+	}
+	if targetRole == domain.ProjectMemberRoleCreator {
+		return repository.ErrForbidden
+	}
+	if actorRole == domain.ProjectMemberRoleAdmin {
+		if targetRole != domain.ProjectMemberRoleMember {
 			return repository.ErrForbidden
 		}
-
-		return nil
+		if requestedRole != nil && *requestedRole != domain.ProjectMemberRoleMember {
+			return repository.ErrForbidden
+		}
 	}
-
-	return repository.ErrProjectNotFound
+	return nil
 
 }

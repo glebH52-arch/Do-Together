@@ -56,6 +56,10 @@ services:
       REFRESH_TOKEN_ABSOLUTE_TTL: ${REFRESH_TOKEN_ABSOLUTE_TTL}
       EMAIL_VERIFICATION_SECRET: ${EMAIL_VERIFICATION_SECRET}
       EMAIL_VERIFICATION_CODE_TTL: ${EMAIL_VERIFICATION_CODE_TTL}
+      AVATAR_DIR: /data/avatars
+      AVATAR_BASE_URL: ${AVATAR_BASE_URL:-http://localhost:8080}
+    volumes:
+      - avatar_data:/data/avatars
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:
@@ -95,3 +99,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  avatar_data:

@@ -7,6 +7,7 @@ import (
 	"do-together/internal/repository"
 	"do-together/internal/service"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -418,6 +419,10 @@ func (t *TaskHandler) SearchTasks(w http.ResponseWriter, r *http.Request) {
 		if value := query.Get("due_before"); value != "" {
 			var due time.Time
 			due, err = time.Parse(time.RFC3339, value)
+			if err != nil {
+				http.Error(w, "due_before must be an RFC3339 timestamp", http.StatusBadRequest)
+				return
+			}
 			options.DueBefore = &due
 		}
 	}
@@ -425,6 +430,10 @@ func (t *TaskHandler) SearchTasks(w http.ResponseWriter, r *http.Request) {
 		if value := query.Get("due_after"); value != "" {
 			var due time.Time
 			due, err = time.Parse(time.RFC3339, value)
+			if err != nil {
+				http.Error(w, "due_after must be an RFC3339 timestamp", http.StatusBadRequest)
+				return
+			}
 			options.DueAfter = &due
 		}
 	}
@@ -434,6 +443,12 @@ func (t *TaskHandler) SearchTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	tasks, err := t.taskService.SearchTasks(r.Context(), actorID, projectID, options)
 	if err != nil {
+		if errors.Is(err, repository.ErrInvalidTaskSearch) &&
+			options.DueAfter != nil && options.DueBefore != nil &&
+			!options.DueAfter.Before(*options.DueBefore) {
+			http.Error(w, "due_after must be earlier than due_before", http.StatusBadRequest)
+			return
+		}
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
 		return

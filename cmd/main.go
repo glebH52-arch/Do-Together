@@ -67,7 +67,11 @@ func run() error {
 		emailCodeManager,
 		cfg.EmailVerificationCodeTTL,
 	)
-	userHandler := handler.NewUserHandler(userService)
+	avatarStorage, err := service.NewAvatarStorage(cfg.AvatarDirectory)
+	if err != nil {
+		return fmt.Errorf("create avatar storage: %w", err)
+	}
+	userHandler := handler.NewUserHandler(userService, avatarStorage, cfg.AvatarBaseURL)
 	authService := service.NewAuthService(
 		userRepository,
 		verificationRepository,

@@ -213,3 +213,34 @@ func (h *ProjectHandler) ArchiveProject(w http.ResponseWriter, r *http.Request) 
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+func (h *ProjectHandler) RestoreProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil() {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	projectID, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil || projectID == uuid.Nil() {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	project, err := h.projectService.RestoreProject(r.Context(), userID, projectID)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	response := projectToResponse(project)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}

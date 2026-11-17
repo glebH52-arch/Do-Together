@@ -32,6 +32,10 @@ func statusFromError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrUsernameEmpty):
 		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrDisplayNameEmpty), errors.Is(err, domain.ErrDisplayNameTooLong):
+		return http.StatusBadRequest
+	case errors.Is(err, service.ErrAvatarEmpty), errors.Is(err, service.ErrAvatarTooLarge), errors.Is(err, service.ErrAvatarFormat), errors.Is(err, service.ErrAvatarDimensions):
+		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrEmailEmpty):
 		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrEmailInvalid):

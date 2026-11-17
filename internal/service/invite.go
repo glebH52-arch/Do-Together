@@ -94,3 +94,13 @@ func (s *InviteService) List(ctx context.Context, inviteeID uuid.UUID) ([]*domai
 	}
 	return invites, nil
 }
+
+func (s *InviteService) CountPending(ctx context.Context, inviteeID uuid.UUID) (int, error) {
+	if inviteeID == uuid.Nil() {
+		return 0, repository.ErrUserNotFound
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return s.repository.CountPending(ctx, inviteeID)
+}

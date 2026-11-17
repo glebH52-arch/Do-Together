@@ -75,3 +75,15 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, userID, projectID u
 	}
 	return nil
 }
+
+func (s *ProjectService) RestoreProject(ctx context.Context, userID, projectID uuid.UUID) (*domain.Project, error) {
+	project, err := s.repository.GetByID(ctx, userID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	project.Restore()
+	if err := s.repository.Update(ctx, userID, project); err != nil {
+		return nil, err
+	}
+	return project, nil
+}

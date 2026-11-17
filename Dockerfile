@@ -12,7 +12,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/email-worker ./cmd/email-worker
 
 FROM alpine:3.22
 
-RUN addgroup -S app && adduser -S -G app app
+RUN addgroup -S app && adduser -S -G app app \
+    && mkdir -p /data/avatars \
+    && chown -R app:app /data/avatars
 
 WORKDIR /app
 

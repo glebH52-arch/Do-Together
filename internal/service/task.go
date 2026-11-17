@@ -147,7 +147,7 @@ func (s *TaskService) SearchTasks(ctx context.Context, actorID, projectID uuid.U
 	if options.AssigneeID != nil && *options.AssigneeID == uuid.Nil() {
 		return nil, repository.ErrInvalidTaskSearch
 	}
-	if options.DueBefore != nil && options.DueAfter != nil && options.DueBefore.Before(*options.DueAfter) {
+	if options.DueBefore != nil && options.DueAfter != nil && !options.DueAfter.Before(*options.DueBefore) {
 		return nil, repository.ErrInvalidTaskSearch
 	}
 	if options.Sort == "" {

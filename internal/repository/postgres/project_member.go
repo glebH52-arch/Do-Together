@@ -76,7 +76,7 @@ func (p *PostgresProjectMemberRepository) List(ctx context.Context, actorID, pro
 	for rows.Next() {
 		var projectMember domain.ProjectMember
 
-		err := rows.Scan(&projectMember.ProjectID, &projectMember.UserID, &projectMember.Username, &projectMember.Email, &projectMember.Role, &projectMember.JoinedAt)
+		err := rows.Scan(&projectMember.ProjectID, &projectMember.UserID, &projectMember.Username, &projectMember.DisplayName, &projectMember.AvatarFilename, &projectMember.AvatarUpdatedAt, &projectMember.Email, &projectMember.Role, &projectMember.JoinedAt)
 		if err != nil {
 			return nil, fmt.Errorf("rows scan: %w", err)
 		}

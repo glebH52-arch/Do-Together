@@ -11,6 +11,9 @@ import (
 type User struct {
 	ID              uuid.UUID
 	Username        string
+	DisplayName     string
+	AvatarFilename  *string
+	AvatarUpdatedAt *time.Time
 	Email           string
 	PasswordHash    string
 	Status          UserStatus
@@ -28,6 +31,8 @@ const (
 var (
 	ErrEmailInvalid         = errors.New("email is invalid")
 	ErrUsernameEmpty        = errors.New("username is empty")
+	ErrDisplayNameEmpty     = errors.New("display name is empty")
+	ErrDisplayNameTooLong   = errors.New("display name is too long")
 	ErrEmailEmpty           = errors.New("email is empty")
 	ErrPasswordHashEmpty    = errors.New("password hash is empty")
 	ErrEmailAlreadyVerified = errors.New("email already verified")
@@ -39,6 +44,17 @@ func validateUsername(username string) (string, error) {
 		return "", ErrUsernameEmpty
 	}
 	return username, nil
+}
+
+func ValidateDisplayName(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", ErrDisplayNameEmpty
+	}
+	if len([]rune(value)) > 100 {
+		return "", ErrDisplayNameTooLong
+	}
+	return value, nil
 }
 
 func validateEmail(email string) (string, error) {
@@ -72,6 +88,7 @@ func NewUser(username string, email string, passwordHash string) (*User, error) 
 
 	user := User{
 		Username:     username,
+		DisplayName:  username,
 		Email:        email,
 		PasswordHash: passwordHash,
 		Status:       UserStatusActive,
