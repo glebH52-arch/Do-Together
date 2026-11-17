@@ -66,37 +66,43 @@ type boardResponse struct {
 }
 
 type taskResponse struct {
-	ID           uuid.UUID  `json:"id"`
-	Title        string     `json:"title"`
-	Description  string     `json:"description"`
-	Type         string     `json:"type"`
-	Priority     string     `json:"priority"`
-	AssigneeID   *uuid.UUID `json:"assignee_id"`
-	AssigneeName *string    `json:"assignee_name"`
-	CreatedBy    uuid.UUID  `json:"created_by"`
-	CreatorName  string     `json:"creator_name"`
-	Status       string     `json:"status"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    *time.Time `json:"update_at,omitempty"`
-	DueAt        *time.Time `json:"due_at,omitempty"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	ID                 uuid.UUID           `json:"id"`
+	Title              string              `json:"title"`
+	Description        string              `json:"description"`
+	Type               string              `json:"type"`
+	Priority           string              `json:"priority"`
+	AssigneeID         *uuid.UUID          `json:"assignee_id"`
+	AssigneeName       *string             `json:"assignee_name"`
+	AssigneeAvatarURL  *string             `json:"assignee_avatar_url"`
+	CreatedBy          uuid.UUID           `json:"created_by"`
+	CreatorName        string              `json:"creator_name"`
+	CreatorAvatarURL   *string             `json:"creator_avatar_url"`
+	Status             string              `json:"status"`
+	CreatedAt          time.Time           `json:"created_at"`
+	UpdatedAt          *time.Time          `json:"update_at,omitempty"`
+	DueAt              *time.Time          `json:"due_at,omitempty"`
+	CompletedAt        *time.Time          `json:"completed_at,omitempty"`
+	AllowedTransitions []domain.TaskStatus `json:"allowed_transitions"`
 }
 
 func taskToResponse(task *domain.Task) taskResponse {
 	return taskResponse{
-		ID:           task.ID,
-		Title:        task.Title,
-		Description:  task.Description,
-		Type:         task.Type,
-		Priority:     task.Priority,
-		AssigneeID:   task.AssigneeID,
-		AssigneeName: task.AssigneeName,
-		CreatedBy:    task.CreatedBy,
-		CreatorName:  task.CreatorName,
-		Status:       string(task.Status),
-		CreatedAt:    task.CreatedAt,
-		UpdatedAt:    task.UpdatedAt,
-		DueAt:        task.DueAt,
-		CompletedAt:  task.CompletedAt,
+		ID:                 task.ID,
+		Title:              task.Title,
+		Description:        task.Description,
+		Type:               task.Type,
+		Priority:           task.Priority,
+		AssigneeID:         task.AssigneeID,
+		AssigneeName:       task.AssigneeName,
+		AssigneeAvatarURL:  relativeAvatarURL(task.AssigneeAvatarFilename, task.AssigneeAvatarUpdatedAt),
+		CreatedBy:          task.CreatedBy,
+		CreatorName:        task.CreatorName,
+		CreatorAvatarURL:   relativeAvatarURL(task.CreatorAvatarFilename, task.CreatorAvatarUpdatedAt),
+		Status:             string(task.Status),
+		CreatedAt:          task.CreatedAt,
+		UpdatedAt:          task.UpdatedAt,
+		DueAt:              task.DueAt,
+		CompletedAt:        task.CompletedAt,
+		AllowedTransitions: domain.AllowedTaskTransitions(task.Status),
 	}
 }

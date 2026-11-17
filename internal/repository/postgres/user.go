@@ -35,7 +35,7 @@ func (p *PostgresUserRepository) Create(ctx context.Context, user *domain.User) 
 	}
 	executor := executorFromContext(ctx, p.pool)
 	var pgErr *pgconn.PgError
-	err := executor.QueryRow(ctx, stmtCreateUser, user.Username, user.Email, user.PasswordHash, user.Status, user.CreatedAt).Scan(&user.ID)
+	err := executor.QueryRow(ctx, stmtCreateUser, user.Username, user.DisplayName, user.Email, user.PasswordHash, user.Status, user.CreatedAt).Scan(&user.ID)
 	if err != nil {
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			switch pgErr.ConstraintName {
@@ -55,7 +55,7 @@ func (p *PostgresUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*do
 		return nil, err
 	}
 	var user domain.User
-	err := p.pool.QueryRow(ctx, stmtGetUserByID, id).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt, &user.EmailVerifiedAt)
+	err := p.pool.QueryRow(ctx, stmtGetUserByID, id).Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarFilename, &user.AvatarUpdatedAt, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt, &user.EmailVerifiedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, repository.ErrUserNotFound
@@ -74,7 +74,7 @@ func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 
 	executor := executorFromContext(ctx, p.pool)
 
-	err := executor.QueryRow(ctx, stmtGetUserByEmail, email).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt, &user.EmailVerifiedAt)
+	err := executor.QueryRow(ctx, stmtGetUserByEmail, email).Scan(&user.ID, &user.Username, &user.DisplayName, &user.AvatarFilename, &user.AvatarUpdatedAt, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt, &user.EmailVerifiedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, repository.ErrUserNotFound
@@ -83,6 +83,23 @@ func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	}
 
 	return &user, nil
+}
+
+func (p *PostgresUserRepository) UpdateProfile(ctx context.Context, user *domain.User) error {
+	if user == nil {
+		return repository.ErrNilUser
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result, err := p.pool.Exec(ctx, stmtUpdateUserProfile, user.ID, user.DisplayName, user.AvatarFilename, user.AvatarUpdatedAt, user.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("update user profile: %w", err)
+	}
+	if result.RowsAffected() != 1 {
+		return repository.ErrUserNotFound
+	}
+	return nil
 }
 
 func (p *PostgresUserRepository) UpdateEmailVerification(ctx context.Context, user *domain.User) error {

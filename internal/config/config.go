@@ -18,6 +18,8 @@ type Config struct {
 	RefreshTokenAbsoluteTTL  time.Duration
 	EmailVerificationSecret  string
 	EmailVerificationCodeTTL time.Duration
+	AvatarDirectory          string
+	AvatarBaseURL            string
 }
 
 func Load() (*Config, error) {
@@ -98,6 +100,14 @@ func Load() (*Config, error) {
 			"REFRESH_TOKEN_IDLE_TTL must not exceed REFRESH_TOKEN_ABSOLUTE_TTL",
 		)
 	}
+	avatarDirectory := os.Getenv("AVATAR_DIR")
+	if avatarDirectory == "" {
+		avatarDirectory = "./data/avatars"
+	}
+	avatarBaseURL := os.Getenv("AVATAR_BASE_URL")
+	if avatarBaseURL == "" {
+		avatarBaseURL = "http://localhost:8080"
+	}
 	return &Config{
 		DatabaseURL:              databaseURL,
 		JWTSecret:                jwtSecret,
@@ -109,5 +119,7 @@ func Load() (*Config, error) {
 		RefreshTokenAbsoluteTTL:  refreshTokenAbsoluteTTL,
 		EmailVerificationSecret:  emailVerificationSecret,
 		EmailVerificationCodeTTL: emailVerificationCodeTTL,
+		AvatarDirectory:          avatarDirectory,
+		AvatarBaseURL:            avatarBaseURL,
 	}, nil
 }

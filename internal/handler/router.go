@@ -14,6 +14,7 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 	router.Path("/projects").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(p.ListProjects)))
 	router.Path("/projects/{id}").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(p.UpdateProject)))
 	router.Path("/projects/{id}").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(p.ArchiveProject)))
+	router.Path("/projects/{id}/restore").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(p.RestoreProject)))
 
 	router.Path("/projects/{id}/members").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(pm.GetMembers)))
 	router.Path("/projects/{id}/members/{userID}").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(pm.UpdateMember)))
@@ -21,6 +22,7 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 
 	router.Path("/projects/{id}/invites").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(ih.CreateInvite)))
 	router.Path("/invites").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(ih.ListInvites)))
+	router.Path("/invites/count").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(ih.CountPendingInvites)))
 	router.Path("/invites/{id}/accept").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(ih.AcceptInvite)))
 	router.Path("/invites/{id}/decline").Methods(http.MethodPost).Handler(au.Authenticate(http.HandlerFunc(ih.DeclineInvite)))
 
@@ -37,6 +39,7 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 	router.Path("/projects/{id}/tasks/{taskID}/comments/{commentID}").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(c.Update)))
 	router.Path("/projects/{id}/tasks/{taskID}/comments/{commentID}").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(c.Delete)))
 	router.Path("/notifications").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(n.List)))
+	router.Path("/notifications/unread-count").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(n.CountUnread)))
 	router.Path("/notifications/{id}/read").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(n.MarkRead)))
 
 	router.Path("/users").Methods(http.MethodPost).HandlerFunc(u.CreateUser)
@@ -45,6 +48,10 @@ func NewRouter(p *ProjectHandler, u *UserHandler, a *AuthHandler, au *middleware
 	router.Path("/auth/refresh").Methods(http.MethodPost).HandlerFunc(a.Refresh)
 	router.Path("/auth/logout").Methods(http.MethodPost).HandlerFunc(a.Logout)
 	router.Path("/users/me").Methods(http.MethodGet).Handler(au.Authenticate(http.HandlerFunc(u.GetMe)))
+	router.Path("/users/me").Methods(http.MethodPatch).Handler(au.Authenticate(http.HandlerFunc(u.UpdateMe)))
+	router.Path("/users/me/avatar").Methods(http.MethodPut).Handler(au.Authenticate(http.HandlerFunc(u.UploadAvatar)))
+	router.Path("/users/me/avatar").Methods(http.MethodDelete).Handler(au.Authenticate(http.HandlerFunc(u.DeleteAvatar)))
+	router.Path("/avatars/{filename}").Methods(http.MethodGet).HandlerFunc(u.ServeAvatar)
 	router.Path("/health").Methods(http.MethodGet).HandlerFunc(h.Health)
 	router.Path("/ready").Methods(http.MethodGet).HandlerFunc(h.Ready)
 	return router

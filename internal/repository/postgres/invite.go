@@ -62,7 +62,7 @@ func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.In
 		if errors.As(err, &pgErr) {
 			switch pgErr.Code {
 			case "23505":
-				if pgErr.ConstraintName == "invites_one_pending_idx" {
+				if pgErr.ConstraintName == "invites_pending_unique" {
 					return domain.ErrPendingInviteAlreadyExists
 				}
 			case "23503":
@@ -77,9 +77,6 @@ func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.In
 		}
 		return fmt.Errorf("insert invite: %w", err)
 	}
-	if _, err := tx.Exec(ctx, stmtInsertInviteNotification, invite.InviteeID, invite.ProjectID, inviteID); err != nil {
-		return fmt.Errorf("insert invite notification: %w", err)
-	}
 	var projectTitle, inviterName string
 	if err := tx.QueryRow(ctx, stmtGetInvitePresentation, invite.ProjectID, invite.InviterID).Scan(&projectTitle, &inviterName); err != nil {
 		return fmt.Errorf("get invite presentation: %w", err)
@@ -91,6 +88,17 @@ func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.In
 	invite.ProjectTitle = projectTitle
 	invite.InviterName = inviterName
 	return nil
+}
+
+func (p *PostgresInviteRepository) CountPending(ctx context.Context, inviteeID uuid.UUID) (int, error) {
+	if inviteeID == uuid.Nil() {
+		return 0, repository.ErrUserNotFound
+	}
+	var count int
+	if err := p.pool.QueryRow(ctx, stmtCountPendingInvites, inviteeID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count pending invites: %w", err)
+	}
+	return count, nil
 }
 
 func (p *PostgresInviteRepository) FindInviteeIDByEmail(ctx context.Context, email string) (uuid.UUID, error) {

@@ -112,6 +112,24 @@ func (h *InviteHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 	}
 
 }
+
+func (h *InviteHandler) CountPendingInvites(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil() {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	count, err := h.inviteService.CountPending(r.Context(), userID)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Count int `json:"count"`
+	}{Count: count})
+}
 func (h *InviteHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok || userID == uuid.Nil() {

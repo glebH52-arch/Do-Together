@@ -112,3 +112,12 @@ func (p *Project) Archive() {
 	p.Status = ProjectStatusArchived
 	p.UpdatedAt = &t
 }
+
+func (p *Project) Restore() {
+	if p.Status == ProjectStatusActive {
+		return
+	}
+	t := time.Now()
+	p.Status = ProjectStatusActive
+	p.UpdatedAt = &t
+}

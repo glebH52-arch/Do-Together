@@ -27,6 +27,54 @@ type UserService struct {
 	emailVerificationCodeTTL time.Duration
 }
 
+func (s *UserService) UpdateDisplayName(ctx context.Context, id uuid.UUID, displayName string) (*domain.User, error) {
+	value, err := domain.ValidateDisplayName(displayName)
+	if err != nil {
+		return nil, err
+	}
+	user, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	user.DisplayName = value
+	now := time.Now()
+	user.UpdatedAt = &now
+	if err := s.repository.UpdateProfile(ctx, user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *UserService) SetAvatar(ctx context.Context, id uuid.UUID, filename string, now time.Time) (*domain.User, *string, error) {
+	user, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	previous := user.AvatarFilename
+	user.AvatarFilename = &filename
+	user.AvatarUpdatedAt = &now
+	user.UpdatedAt = &now
+	if err := s.repository.UpdateProfile(ctx, user); err != nil {
+		return nil, nil, err
+	}
+	return user, previous, nil
+}
+
+func (s *UserService) RemoveAvatar(ctx context.Context, id uuid.UUID, now time.Time) (*domain.User, *string, error) {
+	user, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	previous := user.AvatarFilename
+	user.AvatarFilename = nil
+	user.AvatarUpdatedAt = nil
+	user.UpdatedAt = &now
+	if err := s.repository.UpdateProfile(ctx, user); err != nil {
+		return nil, nil, err
+	}
+	return user, previous, nil
+}
+
 func NewUserService(
 	userRepository repository.UserRepository,
 	verificationRepository repository.EmailVerificationCodeRepository,

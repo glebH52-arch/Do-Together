@@ -12,6 +12,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	GetByEmail(ctx context.Context, email string) (*domain.User, error)
 	UpdateEmailVerification(ctx context.Context, user *domain.User) error
+	UpdateProfile(ctx context.Context, user *domain.User) error
 }
 
 var (

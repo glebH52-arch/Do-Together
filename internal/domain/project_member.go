@@ -7,12 +7,15 @@ import (
 )
 
 type ProjectMember struct {
-	Username  string
-	Email     string
-	ProjectID uuid.UUID
-	UserID    uuid.UUID
-	Role      ProjectMemberRole
-	JoinedAt  time.Time
+	Username        string
+	DisplayName     string
+	AvatarFilename  *string
+	AvatarUpdatedAt *time.Time
+	Email           string
+	ProjectID       uuid.UUID
+	UserID          uuid.UUID
+	Role            ProjectMemberRole
+	JoinedAt        time.Time
 }
 
 type ProjectMemberRole string

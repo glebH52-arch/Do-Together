@@ -41,7 +41,8 @@ func (t *PostgresTaskRepository) Search(ctx context.Context, actorID, projectID 
 		task := &domain.Task{}
 		if err := rows.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.CreatedBy, &task.Status,
 			&task.CreatedAt, &task.UpdatedAt, &task.DueAt, &task.Type, &task.Priority,
-			&task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.CompletedAt); err != nil {
+			&task.AssigneeID, &task.AssigneeName, &task.AssigneeAvatarFilename, &task.AssigneeAvatarUpdatedAt,
+			&task.CreatorName, &task.CreatorAvatarFilename, &task.CreatorAvatarUpdatedAt, &task.CompletedAt); err != nil {
 			return nil, fmt.Errorf("scan task search: %w", err)
 		}
 		tasks = append(tasks, task)

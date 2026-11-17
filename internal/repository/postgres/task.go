@@ -77,13 +77,16 @@ func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) 
 	}
 	if task.AssigneeID != nil {
 		if _, err := tx.Exec(ctx, stmtInsertTaskNotifications, task.ProjectID, taskID, historyID,
-			"assignment_changed", task.CreatedBy, task.AssigneeID, nil); err != nil {
+			string(domain.NotificationKindAssignmentChanged), task.CreatedBy, task.AssigneeID, nil); err != nil {
 			return nil, fmt.Errorf("record task assignment notification: %w", err)
 		}
 	}
 	var creatorName string
 	var assigneeName *string
-	err = tx.QueryRow(ctx, stmtGetTaskParticipants, task.CreatedBy, task.AssigneeID).Scan(&creatorName, &assigneeName)
+	err = tx.QueryRow(ctx, stmtGetTaskParticipants, task.CreatedBy, task.AssigneeID).Scan(
+		&creatorName, &task.CreatorAvatarFilename, &task.CreatorAvatarUpdatedAt,
+		&assigneeName, &task.AssigneeAvatarFilename, &task.AssigneeAvatarUpdatedAt,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("get task participants: %w", err)
 	}
@@ -124,7 +127,9 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID uu
 		var task domain.Task
 
 		err := rows.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.CreatedBy, &task.Status, &task.CreatedAt, &task.UpdatedAt, &task.DueAt,
-			&task.Type, &task.Priority, &task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.CompletedAt)
+			&task.Type, &task.Priority, &task.AssigneeID, &task.AssigneeName,
+			&task.AssigneeAvatarFilename, &task.AssigneeAvatarUpdatedAt,
+			&task.CreatorName, &task.CreatorAvatarFilename, &task.CreatorAvatarUpdatedAt, &task.CompletedAt)
 		if err != nil {
 			return nil, fmt.Errorf("rows scan: %w", err)
 		}
@@ -224,11 +229,11 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 		var first, second *uuid.UUID
 		switch change.action {
 		case "assignee_changed":
-			kind, first, second = "assignment_changed", before.AssigneeID, task.AssigneeID
+			kind, first, second = string(domain.NotificationKindAssignmentChanged), before.AssigneeID, task.AssigneeID
 		case "status_changed":
-			kind, first, second = "status_changed", &task.CreatedBy, task.AssigneeID
+			kind, first, second = string(domain.NotificationKindStatusChanged), &task.CreatedBy, task.AssigneeID
 		case "due_at_changed":
-			kind, first, second = "due_at_changed", &task.CreatedBy, task.AssigneeID
+			kind, first, second = string(domain.NotificationKindDueAtChanged), &task.CreatedBy, task.AssigneeID
 		}
 		if kind != "" {
 			if _, err := tx.Exec(ctx, stmtInsertTaskNotifications, projectID, task.ID, historyID, kind, actorID, first, second); err != nil {
@@ -294,7 +299,11 @@ func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID
 			&task.Priority,
 			&task.AssigneeID,
 			&task.AssigneeName,
+			&task.AssigneeAvatarFilename,
+			&task.AssigneeAvatarUpdatedAt,
 			&task.CreatorName,
+			&task.CreatorAvatarFilename,
+			&task.CreatorAvatarUpdatedAt,
 			&task.CompletedAt,
 		)
 	if err != nil {

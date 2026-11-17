@@ -46,3 +46,11 @@ func (r *PostgresNotificationRepository) MarkRead(ctx context.Context, userID uu
 	}
 	return nil
 }
+
+func (r *PostgresNotificationRepository) CountUnread(ctx context.Context, userID uuid.UUID) (int, error) {
+	var count int
+	if err := r.pool.QueryRow(ctx, stmtCountUnreadNotifications, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count unread notifications: %w", err)
+	}
+	return count, nil
+}

@@ -11,6 +11,7 @@ const (
 	stmtCreateUser                         = "create_user"
 	stmtGetUserByID                        = "get_user_by_id"
 	stmtGetUserByEmail                     = "get_user_by_email"
+	stmtUpdateUserProfile                  = "update_user_profile"
 	stmtCreateProject                      = "create_project"
 	stmtCreateProjectMember                = "create_project_member"
 	stmtGetProjectByID                     = "get_project_by_id"
@@ -22,6 +23,7 @@ const (
 	stmtRemoveProjectMember                = "remove_project_member"
 	stmtCreateInvite                       = "create_invite"
 	stmtGetListInvites                     = "get_list_invites"
+	stmtCountPendingInvites                = "count_pending_invites"
 	stmtAcceptInvite                       = "accept_invite"
 	stmtDeclineInvite                      = "decline_invite"
 	stmtGetInviteForUpdate                 = "get_invite_for_update"
@@ -29,7 +31,6 @@ const (
 	stmtExpireStaleInvites                 = "expire_stale_invites"
 	stmtCanInvite                          = "can_invite"
 	stmtIsProjectMember                    = "is_project_member"
-	stmtInsertInviteNotification           = "insert_invite_notification"
 	stmtGetInvitePresentation              = "get_invite_presentation"
 	stmtCreateTask                         = "create_task"
 	stmtInsertTaskCreatedHistory           = "insert_task_created_history"
@@ -43,6 +44,7 @@ const (
 	stmtTaskHistoryInsert                  = "task_history_insert"
 	stmtInsertTaskNotifications            = "insert_task_notifications"
 	stmtListNotifications                  = "list_notifications"
+	stmtCountUnreadNotifications           = "count_unread_notifications"
 	stmtMarkNotificationRead               = "mark_notification_read"
 	stmtCreateTaskComment                  = "create_task_comment"
 	stmtCommentAccess                      = "comment_access"
@@ -66,15 +68,18 @@ const (
 
 var statements = map[string]string{
 	stmtCreateUser: `
-		INSERT INTO users (username,email,password_hash,status,created_at)
-		VALUES($1,$2,$3,$4,$5)
+		INSERT INTO users (username,display_name,email,password_hash,status,created_at)
+		VALUES($1,$2,$3,$4,$5,$6)
 		RETURNING id
 	`,
 	stmtGetUserByID: `
-		SELECT id,username,email,password_hash,status,created_at,updated_at,email_verified_at FROM users
+		SELECT id,username,display_name,avatar_filename,avatar_updated_at,email,password_hash,status,created_at,updated_at,email_verified_at FROM users
 		WHERE id = $1`,
-	stmtGetUserByEmail: `SELECT id,username,email,password_hash,status,created_at,updated_at,email_verified_at FROM users
+	stmtGetUserByEmail: `SELECT id,username,display_name,avatar_filename,avatar_updated_at,email,password_hash,status,created_at,updated_at,email_verified_at FROM users
 		WHERE email = $1`,
+	stmtUpdateUserProfile: `UPDATE users
+		SET display_name = $2, avatar_filename = $3, avatar_updated_at = $4, updated_at = $5
+		WHERE id = $1`,
 	stmtCreateProject: `
 	INSERT INTO projects(created_by,title,goal,status,created_at)
 	VALUES($1,$2,$3,$4,$5)
@@ -114,6 +119,9 @@ SELECT
     pm.project_id,
     pm.user_id,
 	 u.username,
+	 u.display_name,
+	 u.avatar_filename,
+	 u.avatar_updated_at,
     u.email,
     pm.role,
     pm.joined_at
@@ -141,7 +149,7 @@ ORDER BY pm.user_id
 	FROM project_members AS actor
 	WHERE actor.project_id = target.project_id
 	AND actor.user_id = $4
-	AND actor.role IN ('creator', 'admin')
+	AND (actor.role = 'creator' OR (actor.role = 'admin' AND target.role = 'member' AND $1 = 'member'))
 	)
  `,
 	stmtAddProjectMember: `
@@ -153,7 +161,7 @@ ORDER BY pm.user_id
     FROM project_members AS pm
 	WHERE pm.project_id = $1
 	AND pm.user_id = $5
-	AND pm.role IN ('creator', 'admin')
+	AND (pm.role = 'creator' OR (pm.role = 'admin' AND $3 = 'member'))
 )
 	`,
 	stmtRemoveProjectMember: `
@@ -166,7 +174,7 @@ ORDER BY pm.user_id
     FROM project_members AS actor
 	WHERE actor.project_id = target.project_id
 	AND actor.user_id = $3
-	AND actor.role IN ('creator', 'admin')
+	AND (actor.role = 'creator' OR (actor.role = 'admin' AND target.role = 'member'))
 )
 	`,
 	stmtFindInviteeByEmail: `SELECT id FROM users WHERE email = $1`,
@@ -177,9 +185,6 @@ ORDER BY pm.user_id
 	stmtCreateInvite: `INSERT INTO invites(project_id, inviter_id, invitee_id, role, status, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id`,
-	stmtInsertInviteNotification: `INSERT INTO notifications(recipient_id, project_id, invite_id, kind, payload)
-		VALUES ($1, $2, $3, 'invitation', jsonb_build_object('invite_id', $3::uuid))
-		ON CONFLICT DO NOTHING`,
 	stmtGetInvitePresentation: `SELECT p.title, u.username
 		FROM projects AS p
 		JOIN users AS u ON u.id = $2
@@ -190,8 +195,12 @@ ORDER BY pm.user_id
 	JOIN projects AS p ON p.id = i.project_id
 	JOIN users AS u ON u.id = i.inviter_id
 	WHERE i.invitee_id = $1
+	  AND i.status = 'pending'
+	  AND i.expires_at > NOW()
 	ORDER BY i.created_at, i.id
 	`,
+	stmtCountPendingInvites: `SELECT COUNT(*) FROM invites
+		WHERE invitee_id = $1 AND status = 'pending' AND expires_at > NOW()`,
 	stmtAcceptInvite: `
 	UPDATE invites
 SET status = $1,
@@ -225,7 +234,8 @@ FOR UPDATE
 	stmtInsertTaskCreatedHistory: `INSERT INTO task_history(task_id, actor_id, action, new_values)
 		VALUES ($1, $2, 'created', $3::jsonb)
 		RETURNING id`,
-	stmtGetTaskParticipants: `SELECT creator.username, assignee.username
+	stmtGetTaskParticipants: `SELECT creator.display_name, creator.avatar_filename, creator.avatar_updated_at,
+		assignee.display_name, assignee.avatar_filename, assignee.avatar_updated_at
 		FROM users AS creator
 		LEFT JOIN users AS assignee ON assignee.id = $2
 		WHERE creator.id = $1`,
@@ -257,8 +267,9 @@ FOR UPDATE
     t.id, t.project_id, t.title, t.description,
     t.created_by, t.status, t.created_at,
 	    t.updated_at, t.due_at,
-	    t.task_type, t.priority, t.assignee_id, assignee.username,
-	    creator.username, t.completed_at
+	    t.task_type, t.priority, t.assignee_id, assignee.display_name,
+		assignee.avatar_filename, assignee.avatar_updated_at,
+	    creator.display_name, creator.avatar_filename, creator.avatar_updated_at, t.completed_at
 FROM tasks AS t
 	JOIN users AS creator ON creator.id = t.created_by
 	LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
@@ -278,8 +289,9 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 		t.id, t.project_id, t.title, t.description,
 		t.created_by, t.status, t.created_at,
 		t.updated_at, t.due_at,
-		t.task_type, t.priority, t.assignee_id, assignee.username,
-		creator.username, t.completed_at
+		t.task_type, t.priority, t.assignee_id, assignee.display_name,
+		assignee.avatar_filename, assignee.avatar_updated_at,
+		creator.display_name, creator.avatar_filename, creator.avatar_updated_at, t.completed_at
 	FROM tasks AS t
 	JOIN users AS creator ON creator.id = t.created_by
 	LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
@@ -317,13 +329,28 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 	stmtTaskHistoryInsert: `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
 		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb) RETURNING id`,
 	stmtInsertTaskNotifications: `INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
-		SELECT DISTINCT recipient.id, $1::uuid, $2::uuid, $3::uuid, $4::text, jsonb_build_object('task_id', $2::uuid)
+		SELECT DISTINCT recipient.id, $1::uuid, $2::uuid, $3::uuid, $4::text,
+			jsonb_build_object(
+				'task_id', $2::uuid,
+				'task_title', task.title,
+				'project_id', $1::uuid,
+				'project_title', project.title,
+				'actor_id', $5::uuid,
+				'actor_name', actor.display_name
+			)
 		FROM (VALUES ($6::uuid), ($7::uuid)) AS recipient(id)
+		JOIN tasks AS task ON task.id = $2::uuid AND task.project_id = $1::uuid
+		JOIN projects AS project ON project.id = task.project_id
+		JOIN users AS actor ON actor.id = $5::uuid
 		WHERE recipient.id IS NOT NULL AND recipient.id <> $5::uuid
 		ON CONFLICT DO NOTHING`,
 	stmtListNotifications: `SELECT id, recipient_id, project_id, task_id, invite_id, kind, payload, created_at, read_at
-		FROM notifications WHERE recipient_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
-	stmtMarkNotificationRead: `UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE id = $1 AND recipient_id = $2`,
+		FROM notifications WHERE recipient_id = $1 AND kind <> 'invitation'
+		ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3`,
+	stmtCountUnreadNotifications: `SELECT COUNT(*) FROM notifications
+		WHERE recipient_id = $1 AND read_at IS NULL AND kind <> 'invitation'`,
+	stmtMarkNotificationRead: `UPDATE notifications SET read_at = COALESCE(read_at, NOW())
+		WHERE id = $1 AND recipient_id = $2 AND kind <> 'invitation'`,
 	stmtCreateTaskComment: `WITH inserted AS (
 		INSERT INTO task_comments(task_id, author_id, body)
 		SELECT t.id, $3, $4 FROM tasks AS t
@@ -360,7 +387,8 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 		VALUES ($1, $2, 'comment_deleted', jsonb_build_object('comment_id', $3::uuid, 'body', $4::text))`,
 	stmtSearchTasks: `SELECT t.id, t.project_id, t.title, t.description, t.created_by, t.status,
 		t.created_at, t.updated_at, t.due_at, t.task_type, t.priority,
-		t.assignee_id, assignee.username, creator.username, t.completed_at
+		t.assignee_id, assignee.display_name, assignee.avatar_filename, assignee.avatar_updated_at,
+		creator.display_name, creator.avatar_filename, creator.avatar_updated_at, t.completed_at
 		FROM tasks AS t JOIN users AS creator ON creator.id = t.created_by
 		LEFT JOIN users AS assignee ON assignee.id = t.assignee_id
 		WHERE t.project_id = $1
@@ -370,7 +398,7 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 		AND ($5::uuid IS NULL OR t.assignee_id = $5)
 		AND ($6::text = '' OR t.priority = $6)
 		AND ($7::text = '' OR t.task_type = $7)
-		AND ($8::timestamptz IS NULL OR t.due_at <= $8)
+		AND ($8::timestamptz IS NULL OR t.due_at < $8)
 		AND ($9::timestamptz IS NULL OR t.due_at >= $9)
 		ORDER BY
 		CASE WHEN $10::text = 'created_at' AND $11::text = 'asc' THEN t.created_at END ASC NULLS LAST,

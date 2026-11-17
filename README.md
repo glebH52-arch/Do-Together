@@ -9,11 +9,12 @@ It allows users to create projects, manage team members and roles, work with tas
 - User registration and authentication
 - Access and refresh token authentication
 - Atomic refresh token rotation with Redis
-- Project creation and archiving
+- Project creation, archiving, and restoration
 - Project filtering and pagination
 - Role-based project access
 - Project member management
 - Project invitations with expiration
+- Editable display names and durable JPEG/PNG avatars
 - Task creation, editing, deletion, and status management
 - Graceful HTTP server shutdown
 - PostgreSQL and Redis health checks
@@ -192,6 +193,8 @@ docker compose logs email-worker
 ```
 
 To use Brevo instead, set `EMAIL_TRANSPORT=brevo`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and optionally `BREVO_SENDER_NAME` in `.env`, then recreate the worker.
+
+User avatars are stored in the Compose volume `avatar_data`, so recreating the API container does not remove them. Set `AVATAR_BASE_URL` to the public API origin when it differs from `http://localhost:8080`.
 
 Check container status:
 

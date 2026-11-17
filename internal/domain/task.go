@@ -9,21 +9,25 @@ import (
 )
 
 type Task struct {
-	ID           uuid.UUID
-	ProjectID    uuid.UUID
-	Title        string
-	Description  string
-	Type         string
-	Priority     string
-	AssigneeID   *uuid.UUID
-	AssigneeName *string
-	CreatedBy    uuid.UUID
-	CreatorName  string
-	Status       TaskStatus
-	CreatedAt    time.Time
-	UpdatedAt    *time.Time
-	DueAt        *time.Time
-	CompletedAt  *time.Time
+	ID                      uuid.UUID
+	ProjectID               uuid.UUID
+	Title                   string
+	Description             string
+	Type                    string
+	Priority                string
+	AssigneeID              *uuid.UUID
+	AssigneeName            *string
+	AssigneeAvatarFilename  *string
+	AssigneeAvatarUpdatedAt *time.Time
+	CreatedBy               uuid.UUID
+	CreatorName             string
+	CreatorAvatarFilename   *string
+	CreatorAvatarUpdatedAt  *time.Time
+	Status                  TaskStatus
+	CreatedAt               time.Time
+	UpdatedAt               *time.Time
+	DueAt                   *time.Time
+	CompletedAt             *time.Time
 }
 
 type TaskHistory struct {
@@ -60,7 +64,6 @@ const (
 var allowedTaskTransitions = map[TaskStatus]map[TaskStatus]bool{
 	TaskStatusTodo: {
 		TaskStatusInProgress: true,
-		TaskStatusReview:     true,
 	},
 	TaskStatusInProgress: {
 		TaskStatusReview: true,
@@ -72,6 +75,13 @@ var allowedTaskTransitions = map[TaskStatus]map[TaskStatus]bool{
 	TaskStatusDone: {
 		TaskStatusInProgress: true,
 	},
+}
+
+var taskStatusOrder = []TaskStatus{
+	TaskStatusTodo,
+	TaskStatusInProgress,
+	TaskStatusReview,
+	TaskStatusDone,
 }
 
 var (
@@ -110,6 +120,17 @@ func ValidateTaskTransition(from, to TaskStatus) error {
 	}
 
 	return nil
+}
+
+func AllowedTaskTransitions(status TaskStatus) []TaskStatus {
+	allowed := allowedTaskTransitions[status]
+	transitions := make([]TaskStatus, 0, len(allowed))
+	for _, candidate := range taskStatusOrder {
+		if allowed[candidate] {
+			transitions = append(transitions, candidate)
+		}
+	}
+	return transitions
 }
 
 func ValidateTaskType(value string) error {
