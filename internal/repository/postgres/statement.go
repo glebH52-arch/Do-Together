@@ -12,15 +12,20 @@ const (
 	stmtGetUserByID                        = "get_user_by_id"
 	stmtGetUserByEmail                     = "get_user_by_email"
 	stmtUpdateUserProfile                  = "update_user_profile"
+	stmtGetUserDisplayName                 = "get_user_display_name"
+	stmtInsertProjectActivity              = "insert_project_activity"
+	stmtListProjectActivity                = "list_project_activity"
 	stmtCreateProject                      = "create_project"
 	stmtCreateProjectMember                = "create_project_member"
 	stmtGetProjectByID                     = "get_project_by_id"
 	stmtGetListProjects                    = "get_list_projects"
 	stmtUpdateProject                      = "update_project"
+	stmtLockProjectForUpdate               = "lock_project_for_update"
 	stmtGetListProjectMembers              = "get_list_project_members"
 	stmtUpdateRole                         = "update_role"
 	stmtAddProjectMember                   = "add_project_member"
 	stmtRemoveProjectMember                = "remove_project_member"
+	stmtLockProjectMemberForActivity       = "lock_project_member_for_activity"
 	stmtCreateInvite                       = "create_invite"
 	stmtGetListInvites                     = "get_list_invites"
 	stmtCountPendingInvites                = "count_pending_invites"
@@ -32,6 +37,7 @@ const (
 	stmtCanInvite                          = "can_invite"
 	stmtIsProjectMember                    = "is_project_member"
 	stmtGetInvitePresentation              = "get_invite_presentation"
+	stmtGetInviteActivityPresentation      = "get_invite_activity_presentation"
 	stmtCreateTask                         = "create_task"
 	stmtInsertTaskCreatedHistory           = "insert_task_created_history"
 	stmtGetTaskParticipants                = "get_task_participants"
@@ -43,6 +49,7 @@ const (
 	stmtTaskMemberExists                   = "task_member_exists"
 	stmtLockTaskAssignee                   = "lock_task_assignee"
 	stmtTaskHistoryInsert                  = "task_history_insert"
+	stmtListTaskHistory                    = "list_task_history"
 	stmtInsertTaskNotifications            = "insert_task_notifications"
 	stmtListNotifications                  = "list_notifications"
 	stmtCountUnreadNotifications           = "count_unread_notifications"
@@ -81,6 +88,37 @@ var statements = map[string]string{
 	stmtUpdateUserProfile: `UPDATE users
 		SET display_name = $2, avatar_filename = $3, avatar_updated_at = $4, updated_at = $5
 		WHERE id = $1`,
+	stmtGetUserDisplayName: `SELECT display_name FROM users WHERE id = $1`,
+	stmtInsertProjectActivity: `INSERT INTO task_history (
+		project_id, task_id, actor_id, actor_name, action,
+		object_type, object_id, object_title, old_values, new_values
+	)
+	SELECT $1, NULL, actor.id, actor.display_name, $3, $4, $5, $6, $7::jsonb, $8::jsonb
+	FROM users AS actor
+	WHERE actor.id = $2`,
+	stmtListProjectActivity: `WITH access AS (
+		SELECT EXISTS (
+			SELECT 1 FROM project_members
+			WHERE project_id = $1 AND user_id = $2
+		) AS allowed
+	), page AS (
+		SELECT h.id, h.project_id, h.actor_id,
+			h.actor_name, h.action,
+			h.object_type, h.object_id, h.object_title,
+			(h.action IN ('task.deleted', 'comment.deleted')
+			 OR (h.task_id IS NULL AND h.object_type = 'task')) AS object_deleted,
+			h.old_values, h.new_values, h.occurred_at
+		FROM task_history AS h
+		WHERE h.project_id = $1
+		  AND ($3::timestamptz IS NULL OR (h.occurred_at, h.id) < ($3, $4::uuid))
+		ORDER BY h.occurred_at DESC, h.id DESC
+		LIMIT $5
+	)
+	SELECT access.allowed, page.id, page.project_id, page.actor_id,
+		page.actor_name, page.action, page.object_type, page.object_id,
+		page.object_title, page.object_deleted, page.old_values,
+		page.new_values, page.occurred_at
+	FROM access LEFT JOIN page ON access.allowed`,
 	stmtCreateProject: `
 	INSERT INTO projects(created_by,title,goal,status,created_at)
 	VALUES($1,$2,$3,$4,$5)
@@ -115,6 +153,11 @@ var statements = map[string]string{
 	AND pm.user_id = $6
 	AND pm.role = 'creator'
 	`,
+	stmtLockProjectForUpdate: `SELECT project.title, project.goal, project.status, project.updated_at
+		FROM projects AS project
+		JOIN project_members AS member ON member.project_id = project.id
+		WHERE project.id = $1 AND member.user_id = $2 AND member.role = 'creator'
+		FOR UPDATE OF project`,
 	stmtGetListProjectMembers: `
 SELECT
     pm.project_id,
@@ -178,6 +221,11 @@ ORDER BY pm.user_id
 	AND (actor.role = 'creator' OR (actor.role = 'admin' AND target.role = 'member'))
 )
 	`,
+	stmtLockProjectMemberForActivity: `SELECT member.role, target.display_name
+		FROM project_members AS member
+		JOIN users AS target ON target.id = member.user_id
+		WHERE member.project_id = $1 AND member.user_id = $2
+		FOR UPDATE OF member`,
 	stmtFindInviteeByEmail: `SELECT id FROM users WHERE email = $1`,
 	stmtExpireStaleInvites: `UPDATE invites SET status = 'expired', updated_at = $3
 		WHERE project_id = $1 AND invitee_id = $2 AND status = 'pending' AND expires_at <= $3`,
@@ -190,6 +238,10 @@ ORDER BY pm.user_id
 		FROM projects AS p
 		JOIN users AS u ON u.id = $2
 		WHERE p.id = $1`,
+	stmtGetInviteActivityPresentation: `SELECT project.title, invitee.display_name
+		FROM projects AS project
+		JOIN users AS invitee ON invitee.id = $2
+		WHERE project.id = $1`,
 	stmtGetListInvites: `
 	SELECT i.id,i.project_id,i.inviter_id,i.invitee_id,i.role,i.status,i.expires_at,i.created_at,i.updated_at,
 		p.title,u.username FROM invites AS i
@@ -346,6 +398,17 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 			'task', $1, $5, $6::jsonb, $7::jsonb
 		FROM users AS actor WHERE actor.id = $3
 		RETURNING id`,
+	stmtListTaskHistory: `SELECT history.id, history.task_id, history.actor_id,
+		user_account.username, history.action, history.old_values,
+		history.new_values, history.occurred_at
+		FROM task_history AS history
+		JOIN users AS user_account ON user_account.id = history.actor_id
+		JOIN tasks AS task ON task.id = history.task_id
+		JOIN project_members AS member
+			ON member.project_id = task.project_id AND member.user_id = $1
+		WHERE task.project_id = $2 AND task.id = $3
+		ORDER BY history.occurred_at DESC, history.id DESC
+		LIMIT $4 OFFSET $5`,
 	stmtInsertTaskNotifications: `INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
 		SELECT DISTINCT recipient.id, $1::uuid, $2::uuid, $3::uuid, $4::text,
 			jsonb_build_object(

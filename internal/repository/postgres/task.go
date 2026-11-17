@@ -334,7 +334,7 @@ func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID
 }
 
 func (t *PostgresTaskRepository) History(ctx context.Context, actorID, projectID, taskID uuid.UUID, limit, offset int) ([]*domain.TaskHistory, error) {
-	rows, err := t.pool.Query(ctx, `SELECT h.id,h.task_id,h.actor_id,u.username,h.action,h.old_values,h.new_values,h.occurred_at FROM task_history h JOIN users u ON u.id=h.actor_id JOIN tasks t ON t.id=h.task_id JOIN project_members pm ON pm.project_id=t.project_id AND pm.user_id=$1 WHERE t.project_id=$2 AND t.id=$3 ORDER BY h.occurred_at DESC,h.id DESC LIMIT $4 OFFSET $5`, actorID, projectID, taskID, limit, offset)
+	rows, err := t.pool.Query(ctx, stmtListTaskHistory, actorID, projectID, taskID, limit, offset)
 	if err != nil {
 		return nil, err
 	}

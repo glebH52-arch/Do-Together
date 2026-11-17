@@ -140,11 +140,7 @@ func (p *PostgresProjectRepository) Update(ctx context.Context, userID uuid.UUID
 	var oldTitle, oldGoal string
 	var oldStatus domain.ProjectStatus
 	var oldUpdatedAt *time.Time
-	err = tx.QueryRow(ctx, `SELECT p.title, p.goal, p.status, p.updated_at
-		FROM projects AS p
-		JOIN project_members AS member ON member.project_id = p.id
-		WHERE p.id = $1 AND member.user_id = $2 AND member.role = 'creator'
-		FOR UPDATE OF p`, project.ID, userID).Scan(&oldTitle, &oldGoal, &oldStatus, &oldUpdatedAt)
+	err = tx.QueryRow(ctx, stmtLockProjectForUpdate, project.ID, userID).Scan(&oldTitle, &oldGoal, &oldStatus, &oldUpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.ErrProjectNotFound
 	}
