@@ -7,7 +7,7 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import { History as HistoryIcon, Plus, X } from "lucide-react";
+import { History as HistoryIcon, MoreHorizontal, Plus, X } from "lucide-react";
 import {
   ApiError,
   api,
@@ -28,6 +28,7 @@ import {
 import { ProjectMembers } from "./ProjectMembers";
 import type { Locale } from "./i18n";
 import "./workspace-overrides.css";
+import "./status-menu.css";
 const statuses: TaskStatus[] = ["todo", "in_progress", "review", "done"],
   statusName = {
     todo: "К выполнению",
@@ -374,7 +375,7 @@ export function ProjectDetail({
                           {t.due_at ? fmt(t.due_at) : "Без срока"}
                         </small>
                       </button>
-                      <label className="move-select"><span className="sr-only">Переместить {t.title}</span><select value="" onChange={e=>e.target.value&&void move(t,e.target.value as TaskStatus)}><option value="">Переместить в…</option>{t.allowed_transitions.map(s=><option key={s} value={s}>{statusName[s]}</option>)}</select></label>
+                      <details className="status-menu"><summary aria-label={`Изменить статус ${t.title}`}><MoreHorizontal/></summary><div>{t.allowed_transitions.length===0?<span>Нет доступных переходов</span>:t.allowed_transitions.map(s=><button className="text-button" key={s} onClick={()=>void move(t,s)}>В {statusName[s]}</button>)}</div></details>
                     </article>
                   ))}
               </div>
