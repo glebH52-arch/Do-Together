@@ -59,7 +59,7 @@ func (p *PostgresProjectMemberRepository) Add(ctx context.Context, actorID uuid.
 		return repository.ErrProjectNotFound
 	}
 	var targetName string
-	if err := tx.QueryRow(ctx, `SELECT display_name FROM users WHERE id = $1`, member.UserID).Scan(&targetName); err != nil {
+	if err := tx.QueryRow(ctx, stmtGetUserDisplayName, member.UserID).Scan(&targetName); err != nil {
 		return fmt.Errorf("get added member presentation: %w", err)
 	}
 	if err := insertProjectActivity(ctx, tx, member.ProjectID, actorID, member.UserID, "member.joined", "member", targetName, nil, map[string]any{
@@ -129,9 +129,7 @@ func (p *PostgresProjectMemberRepository) UpdateRole(ctx context.Context, actorI
 	defer tx.Rollback(ctx)
 	var oldRole domain.ProjectMemberRole
 	var targetName string
-	err = tx.QueryRow(ctx, `SELECT member.role, target.display_name
-		FROM project_members AS member JOIN users AS target ON target.id = member.user_id
-		WHERE member.project_id = $1 AND member.user_id = $2 FOR UPDATE OF member`, projectID, targetUserID).Scan(&oldRole, &targetName)
+	err = tx.QueryRow(ctx, stmtLockProjectMemberForActivity, projectID, targetUserID).Scan(&oldRole, &targetName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.ErrProjectNotFound
 	}
@@ -179,9 +177,7 @@ func (p *PostgresProjectMemberRepository) Remove(ctx context.Context, actorID, p
 	defer tx.Rollback(ctx)
 	var oldRole domain.ProjectMemberRole
 	var targetName string
-	err = tx.QueryRow(ctx, `SELECT member.role, target.display_name
-		FROM project_members AS member JOIN users AS target ON target.id = member.user_id
-		WHERE member.project_id = $1 AND member.user_id = $2 FOR UPDATE OF member`, projectID, targetUserID).Scan(&oldRole, &targetName)
+	err = tx.QueryRow(ctx, stmtLockProjectMemberForActivity, projectID, targetUserID).Scan(&oldRole, &targetName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.ErrProjectNotFound
 	}

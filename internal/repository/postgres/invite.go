@@ -82,7 +82,7 @@ func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.In
 		return fmt.Errorf("get invite presentation: %w", err)
 	}
 	var inviteeName string
-	if err := tx.QueryRow(ctx, `SELECT display_name FROM users WHERE id = $1`, invite.InviteeID).Scan(&inviteeName); err != nil {
+	if err := tx.QueryRow(ctx, stmtGetUserDisplayName, invite.InviteeID).Scan(&inviteeName); err != nil {
 		return fmt.Errorf("get invitee presentation: %w", err)
 	}
 	if err := insertProjectActivity(ctx, tx, invite.ProjectID, invite.InviterID, inviteID, "invite.sent", "invite", projectTitle, nil, map[string]any{
@@ -206,9 +206,7 @@ func (p *PostgresInviteRepository) Accept(ctx context.Context, inviteeID, invite
 		return domain.ErrInviteNotFound
 	}
 	var projectTitle, inviteeName string
-	if err := tx.QueryRow(ctx, `SELECT project.title, invitee.display_name
-		FROM projects AS project JOIN users AS invitee ON invitee.id = $2
-		WHERE project.id = $1`, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
+	if err := tx.QueryRow(ctx, stmtGetInviteActivityPresentation, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
 		return fmt.Errorf("get accepted invite presentation: %w", err)
 	}
 	if err := insertProjectActivity(ctx, tx, invite.ProjectID, inviteeID, invite.ID, "invite.accepted", "invite", projectTitle,
@@ -249,9 +247,7 @@ func (p *PostgresInviteRepository) Decline(ctx context.Context, inviteeID, invit
 		return domain.ErrInviteNotFound
 	}
 	var projectTitle, inviteeName string
-	if err := tx.QueryRow(ctx, `SELECT project.title, invitee.display_name
-		FROM projects AS project JOIN users AS invitee ON invitee.id = $2
-		WHERE project.id = $1`, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
+	if err := tx.QueryRow(ctx, stmtGetInviteActivityPresentation, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
 		return fmt.Errorf("get declined invite presentation: %w", err)
 	}
 	if err := insertProjectActivity(ctx, tx, invite.ProjectID, inviteeID, invite.ID, "invite.declined", "invite", projectTitle,
