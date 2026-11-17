@@ -9,23 +9,43 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"uuid"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
-var ErrInvalidCredentials = errors.New("invalid credentials")
+var (
+	ErrInvalidCredentials      = errors.New("invalid credentials")
+	ErrEmailNotVerified        = errors.New("email is not verified")
+	ErrInvalidVerificationCode = errors.New("invalid email verification code")
+)
 
 type AuthService struct {
 	userRepository           repository.UserRepository
+	verificationRepository   repository.EmailVerificationCodeRepository
+	transactor               repository.Transactor
+	emailCodeManager         *auth.EmailCodeManager
 	jwtManager               *auth.JWTManager
 	refreshSessionRepository repository.RefreshSessionRepository
 	refreshTokenIdleTTL      time.Duration
 	refreshTokenAbsoluteTTL  time.Duration
 }
 
-func NewAuthService(repository repository.UserRepository, jwtManager *auth.JWTManager, refreshSessionRepository repository.RefreshSessionRepository, refreshTokenIdleTTL time.Duration, refreshTokenAbsoluteTTL time.Duration) *AuthService {
+func NewAuthService(
+	userRepository repository.UserRepository,
+	verificationRepository repository.EmailVerificationCodeRepository,
+	transactor repository.Transactor,
+	emailCodeManager *auth.EmailCodeManager,
+	jwtManager *auth.JWTManager,
+	refreshSessionRepository repository.RefreshSessionRepository,
+	refreshTokenIdleTTL time.Duration,
+	refreshTokenAbsoluteTTL time.Duration,
+) *AuthService {
 	return &AuthService{
-		userRepository:           repository,
+		userRepository:           userRepository,
+		verificationRepository:   verificationRepository,
+		transactor:               transactor,
+		emailCodeManager:         emailCodeManager,
 		jwtManager:               jwtManager,
 		refreshSessionRepository: refreshSessionRepository,
 		refreshTokenIdleTTL:      refreshTokenIdleTTL,
@@ -66,28 +86,11 @@ func (a *AuthService) Login(ctx context.Context, email, password string) (access
 		return "", "", 0, fmt.Errorf("compare password hash: %w", err)
 	}
 
-	accessToken, expiresIn, err = a.jwtManager.CreateAccessToken(user.ID)
-	if err != nil {
-		return "", "", 0, err
+	if !user.IsEmailVerified() {
+		return "", "", 0, ErrEmailNotVerified
 	}
-	now := time.Now()
 
-	refreshToken, sessionID, tokenHash, err := auth.GenerateRefreshToken()
-	if err != nil {
-		return "", "", 0, fmt.Errorf("generate refresh token: %w", err)
-	}
-	session := &domain.RefreshSession{
-		SessionID:         sessionID,
-		UserID:            user.ID,
-		TokenHash:         tokenHash,
-		CreatedAt:         now,
-		AbsoluteExpiresAt: now.Add(a.refreshTokenAbsoluteTTL),
-	}
-	err = a.refreshSessionRepository.Create(ctx, session, a.refreshTokenIdleTTL)
-	if err != nil {
-		return "", "", 0, err
-	}
-	return accessToken, refreshToken, expiresIn, nil
+	return a.issueSession(ctx, user.ID)
 }
 func (a *AuthService) Refresh(ctx context.Context, oldRefreshToken string) (accessToken string, newRefreshToken string, expiresIn int64, err error) {
 	if err := ctx.Err(); err != nil {
@@ -129,4 +132,154 @@ func (a *AuthService) Logout(ctx context.Context, refreshToken string) error {
 	}
 
 	return nil
+}
+func (a *AuthService) issueSession(ctx context.Context, userID uuid.UUID) (accessToken string, refreshToken string, expiresIn int64, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", 0, err
+	}
+
+	accessToken, expiresIn, err = a.jwtManager.CreateAccessToken(userID)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("create access token: %w", err)
+	}
+
+	now := time.Now()
+	refreshToken, sessionID, tokenHash, err := auth.GenerateRefreshToken()
+	if err != nil {
+		return "", "", 0, fmt.Errorf("generate refresh token: %w", err)
+	}
+
+	session := &domain.RefreshSession{
+		SessionID:         sessionID,
+		UserID:            userID,
+		TokenHash:         tokenHash,
+		CreatedAt:         now,
+		AbsoluteExpiresAt: now.Add(a.refreshTokenAbsoluteTTL),
+	}
+	if err := a.refreshSessionRepository.Create(ctx, session, a.refreshTokenIdleTTL); err != nil {
+		return "", "", 0, err
+	}
+
+	return accessToken, refreshToken, expiresIn, nil
+}
+func validateVerificationCode(code string) (string, error) {
+	code = strings.TrimSpace(code)
+
+	if len(code) != 6 {
+		return "", ErrInvalidVerificationCode
+	}
+
+	for _, symbol := range code {
+		if symbol < '0' || symbol > '9' {
+			return "", ErrInvalidVerificationCode
+		}
+	}
+
+	return code, nil
+}
+func (a *AuthService) VerifyEmail(ctx context.Context, email string, plainCode string) (accessToken string, refreshToken string, expiresIn int64, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", "", 0, err
+	}
+
+	email, err = domain.NormalizeEmail(email)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	plainCode, err = validateVerificationCode(plainCode)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	now := time.Now()
+
+	var userID uuid.UUID
+	var verificationErr error
+
+	err = a.transactor.WithinTx(
+		ctx,
+		func(txCtx context.Context) error {
+			user, err := a.userRepository.GetByEmail(
+				txCtx,
+				email,
+			)
+			if err != nil {
+				if errors.Is(err, repository.ErrUserNotFound) {
+					return ErrInvalidVerificationCode
+				}
+				return err
+			}
+
+			if user.IsEmailVerified() {
+				return domain.ErrEmailAlreadyVerified
+			}
+
+			code, err :=
+				a.verificationRepository.GetLatestForUpdate(
+					txCtx,
+					user.ID,
+				)
+			if err != nil {
+				return err
+			}
+
+			if err := code.ValidateAttempt(now); err != nil {
+				return err
+			}
+
+			if !a.emailCodeManager.Verify(
+				plainCode,
+				code.CodeHash,
+			) {
+				if err := code.RegisterFailedAttempt(); err != nil {
+					return err
+				}
+
+				if err := a.verificationRepository.UpdateFailedAttempts(
+					txCtx,
+					code,
+				); err != nil {
+					return err
+				}
+
+				verificationErr = ErrInvalidVerificationCode
+				return nil
+			}
+
+			if err := code.Consume(now); err != nil {
+				return err
+			}
+
+			if err := user.VerifyEmail(now); err != nil {
+				return err
+			}
+
+			if err := a.verificationRepository.Consume(
+				txCtx,
+				code,
+			); err != nil {
+				return err
+			}
+
+			if err := a.userRepository.UpdateEmailVerification(
+				txCtx,
+				user,
+			); err != nil {
+				return err
+			}
+
+			userID = user.ID
+			return nil
+		},
+	)
+	if err != nil {
+		return "", "", 0, err
+	}
+
+	if verificationErr != nil {
+		return "", "", 0, verificationErr
+	}
+
+	return a.issueSession(ctx, userID)
 }

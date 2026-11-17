@@ -6,6 +6,7 @@ import (
 	"do-together/internal/repository"
 	"errors"
 	"fmt"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,7 +22,7 @@ func NewTaskCommentRepository(pool *pgxpool.Pool) *PostgresTaskCommentRepository
 	return &PostgresTaskCommentRepository{pool: pool}
 }
 
-func (r *PostgresTaskCommentRepository) Create(ctx context.Context, actorID, projectID, taskID int, body string) (*domain.TaskComment, error) {
+func (r *PostgresTaskCommentRepository) Create(ctx context.Context, actorID, projectID, taskID uuid.UUID, body string) (*domain.TaskComment, error) {
 	comment := &domain.TaskComment{}
 	err := r.pool.QueryRow(ctx, stmtCreateTaskComment, projectID, taskID, actorID, body).
 		Scan(&comment.ID, &comment.TaskID, &comment.AuthorID, &comment.AuthorName, &comment.Body, &comment.CreatedAt, &comment.UpdatedAt)
@@ -34,7 +35,7 @@ func (r *PostgresTaskCommentRepository) Create(ctx context.Context, actorID, pro
 	return comment, nil
 }
 
-func (r *PostgresTaskCommentRepository) List(ctx context.Context, actorID, projectID, taskID, limit, offset int) ([]*domain.TaskComment, error) {
+func (r *PostgresTaskCommentRepository) List(ctx context.Context, actorID, projectID, taskID uuid.UUID, limit, offset int) ([]*domain.TaskComment, error) {
 	var allowed bool
 	err := r.pool.QueryRow(ctx, stmtCommentAccess, projectID, taskID, actorID).Scan(&allowed)
 	if err != nil {
@@ -59,7 +60,7 @@ func (r *PostgresTaskCommentRepository) List(ctx context.Context, actorID, proje
 	return comments, rows.Err()
 }
 
-func (r *PostgresTaskCommentRepository) Update(ctx context.Context, actorID, projectID, taskID int, commentID int64, body string) error {
+func (r *PostgresTaskCommentRepository) Update(ctx context.Context, actorID, projectID, taskID uuid.UUID, commentID uuid.UUID, body string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -87,7 +88,7 @@ func (r *PostgresTaskCommentRepository) Update(ctx context.Context, actorID, pro
 	return tx.Commit(ctx)
 }
 
-func (r *PostgresTaskCommentRepository) Delete(ctx context.Context, actorID, projectID, taskID int, commentID int64) error {
+func (r *PostgresTaskCommentRepository) Delete(ctx context.Context, actorID, projectID, taskID uuid.UUID, commentID uuid.UUID) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return err

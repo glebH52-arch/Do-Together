@@ -6,6 +6,7 @@ import (
 	"do-together/internal/repository"
 	"errors"
 	"fmt"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,8 +33,9 @@ func (p *PostgresUserRepository) Create(ctx context.Context, user *domain.User) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	executor := executorFromContext(ctx, p.pool)
 	var pgErr *pgconn.PgError
-	err := p.pool.QueryRow(ctx, stmtCreateUser, user.Username, user.Email, user.PasswordHash, user.Status, user.CreatedAt).Scan(&user.ID)
+	err := executor.QueryRow(ctx, stmtCreateUser, user.Username, user.Email, user.PasswordHash, user.Status, user.CreatedAt).Scan(&user.ID)
 	if err != nil {
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			switch pgErr.ConstraintName {
@@ -48,12 +50,12 @@ func (p *PostgresUserRepository) Create(ctx context.Context, user *domain.User) 
 	return nil
 }
 
-func (p *PostgresUserRepository) GetByID(ctx context.Context, id int) (*domain.User, error) {
+func (p *PostgresUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	var user domain.User
-	err := p.pool.QueryRow(ctx, stmtGetUserByID, id).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt)
+	err := p.pool.QueryRow(ctx, stmtGetUserByID, id).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt, &user.EmailVerifiedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, repository.ErrUserNotFound
@@ -69,7 +71,10 @@ func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 		return nil, err
 	}
 	var user domain.User
-	err := p.pool.QueryRow(ctx, stmtGetUserByEmail, email).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt)
+
+	executor := executorFromContext(ctx, p.pool)
+
+	err := executor.QueryRow(ctx, stmtGetUserByEmail, email).Scan(&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Status, &user.CreatedAt, &user.UpdatedAt, &user.EmailVerifiedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, repository.ErrUserNotFound
@@ -78,4 +83,35 @@ func (p *PostgresUserRepository) GetByEmail(ctx context.Context, email string) (
 	}
 
 	return &user, nil
+}
+
+func (p *PostgresUserRepository) UpdateEmailVerification(ctx context.Context, user *domain.User) error {
+	if user == nil {
+		return repository.ErrNilUser
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if user.EmailVerifiedAt == nil {
+		return repository.ErrUserEmailNotVerified
+	}
+	tx, ok := transactionFromContext(ctx)
+	if !ok {
+		return repository.ErrTransactionRequired
+	}
+	commandTag, err := tx.Exec(ctx, stmtUpdateUserEmailVerification, user.ID, *user.EmailVerifiedAt)
+	if err != nil {
+		return fmt.Errorf(
+			"email verification failed: %w",
+			err,
+		)
+	}
+
+	if commandTag.RowsAffected() != 1 {
+		return domain.ErrEmailAlreadyVerified
+	}
+
+	return nil
 }

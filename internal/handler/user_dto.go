@@ -3,6 +3,7 @@ package handler
 import (
 	"do-together/internal/domain"
 	"time"
+	"uuid"
 )
 
 type createUserRequest struct {
@@ -12,7 +13,7 @@ type createUserRequest struct {
 }
 
 type createUserResponse struct {
-	ID        int        `json:"id"`
+	ID        uuid.UUID  `json:"id"`
 	Username  string     `json:"username"`
 	Email     string     `json:"email"`
 	Status    string     `json:"status"`

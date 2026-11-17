@@ -3,13 +3,14 @@ package domain
 import (
 	"errors"
 	"time"
+	"uuid"
 )
 
 type Invite struct {
-	ID           int
-	ProjectID    int
-	InviterID    int
-	InviteeID    int
+	ID           uuid.UUID
+	ProjectID    uuid.UUID
+	InviterID    uuid.UUID
+	InviteeID    uuid.UUID
 	Role         ProjectMemberRole
 	Status       InviteStatus
 	ExpiresAt    time.Time
@@ -38,14 +39,14 @@ var (
 	ErrPendingInviteAlreadyExists = errors.New("pending invite already exists")
 )
 
-func NewInvite(inviterID, inviteeID, projectID int, role ProjectMemberRole) (*Invite, error) {
-	if inviterID <= 0 {
+func NewInvite(inviterID, inviteeID, projectID uuid.UUID, role ProjectMemberRole) (*Invite, error) {
+	if inviterID == uuid.Nil() {
 		return nil, ErrInvalidInviterID
 	}
-	if inviteeID <= 0 {
+	if inviteeID == uuid.Nil() {
 		return nil, ErrInvalidInviteeID
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return nil, ErrInvalidProjectID
 	}
 	err := role.validateInviteRole()

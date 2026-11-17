@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"uuid"
 )
 
 func TestNewProject_Success(t *testing.T) {
@@ -13,7 +14,7 @@ func TestNewProject_Success(t *testing.T) {
 
 	// Assert: проверить ошибку и поля результата
 
-	userID := 123456
+	userID := uuid.New()
 	title := "  get a job  "
 	goal := "  get a job as a junior Go developer  "
 
@@ -44,8 +45,8 @@ func TestNewProject_Success(t *testing.T) {
 		t.Errorf("expected project title %v, got %v", expectedTitle, project.Title)
 	}
 
-	if project.ID != 0 {
-		t.Errorf("expected project ID %v, got %v", 0, project.ID)
+	if project.ID != uuid.Nil() {
+		t.Errorf("expected empty project ID, got %v", project.ID)
 
 	}
 
@@ -61,7 +62,7 @@ func TestNewProject_Success(t *testing.T) {
 
 func TestNewProject_EmptyTitle(t *testing.T) {
 	// Arrange
-	userID := 123456
+	userID := uuid.New()
 	title := "   "
 	goal := "get a job"
 
@@ -88,7 +89,7 @@ func TestNewProject_EmptyTitle(t *testing.T) {
 }
 func TestNewProject_TitleTooLong(t *testing.T) {
 	// Arrange
-	userID := 123456
+	userID := uuid.New()
 	title := strings.Repeat("я", 101)
 	goal := "get a job"
 
@@ -112,7 +113,7 @@ func TestNewProject_TitleTooLong(t *testing.T) {
 
 func TestNewProject_EmptyGoal(t *testing.T) {
 	// Arrange
-	userID := 123456
+	userID := uuid.New()
 	title := "12343"
 	goal := "		"
 
@@ -139,7 +140,7 @@ func TestNewProject_EmptyGoal(t *testing.T) {
 }
 func TestNewProject_GoalTooLong(t *testing.T) {
 	// Arrange
-	userID := 123456
+	userID := uuid.New()
 	title := "get a job"
 	goal := strings.Repeat("я", 201)
 
@@ -163,7 +164,7 @@ func TestNewProject_GoalTooLong(t *testing.T) {
 
 func TestNewProject_TitleTooAtMaxLenght(t *testing.T) {
 	// Arrange
-	userID := 123456
+	userID := uuid.New()
 	title := strings.Repeat("я", 100)
 	goal := "get a job"
 

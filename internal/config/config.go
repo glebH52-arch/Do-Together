@@ -8,17 +8,45 @@ import (
 )
 
 type Config struct {
-	DatabaseURL             string
-	JWTSecret               string
-	AccessTokenTTL          time.Duration
-	RedisAddr               string
-	RedisPassword           string
-	RedisDB                 int
-	RefreshTokenIdleTTL     time.Duration
-	RefreshTokenAbsoluteTTL time.Duration
+	DatabaseURL              string
+	JWTSecret                string
+	AccessTokenTTL           time.Duration
+	RedisAddr                string
+	RedisPassword            string
+	RedisDB                  int
+	RefreshTokenIdleTTL      time.Duration
+	RefreshTokenAbsoluteTTL  time.Duration
+	EmailVerificationSecret  string
+	EmailVerificationCodeTTL time.Duration
 }
 
 func Load() (*Config, error) {
+	emailVerificationSecret := os.Getenv(
+		"EMAIL_VERIFICATION_SECRET",
+	)
+	if len(emailVerificationSecret) < 32 {
+		return nil, fmt.Errorf(
+			"EMAIL_VERIFICATION_SECRET must be at least 32 characters",
+		)
+	}
+
+	emailVerificationCodeTTLText := os.Getenv(
+		"EMAIL_VERIFICATION_CODE_TTL",
+	)
+	emailVerificationCodeTTL, err := time.ParseDuration(
+		emailVerificationCodeTTLText,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"parse EMAIL_VERIFICATION_CODE_TTL: %w",
+			err,
+		)
+	}
+	if emailVerificationCodeTTL <= 0 {
+		return nil, fmt.Errorf(
+			"EMAIL_VERIFICATION_CODE_TTL must be positive",
+		)
+	}
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
@@ -40,7 +68,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("REDIS_ADDR  is required")
 	}
 	redisPassword := os.Getenv("REDIS_PASSWORD")
-	
+
 	redisDB, err := strconv.Atoi(os.Getenv("REDIS_DB"))
 
 	if err != nil {
@@ -71,13 +99,15 @@ func Load() (*Config, error) {
 		)
 	}
 	return &Config{
-		DatabaseURL:             databaseURL,
-		JWTSecret:               jwtSecret,
-		AccessTokenTTL:          accessTokenTTL,
-		RedisAddr:               redisAddr,
-		RedisPassword:           redisPassword,
-		RedisDB:                 redisDB,
-		RefreshTokenIdleTTL:     refreshTokenIdleTTL,
-		RefreshTokenAbsoluteTTL: refreshTokenAbsoluteTTL,
+		DatabaseURL:              databaseURL,
+		JWTSecret:                jwtSecret,
+		AccessTokenTTL:           accessTokenTTL,
+		RedisAddr:                redisAddr,
+		RedisPassword:            redisPassword,
+		RedisDB:                  redisDB,
+		RefreshTokenIdleTTL:      refreshTokenIdleTTL,
+		RefreshTokenAbsoluteTTL:  refreshTokenAbsoluteTTL,
+		EmailVerificationSecret:  emailVerificationSecret,
+		EmailVerificationCodeTTL: emailVerificationCodeTTL,
 	}, nil
 }

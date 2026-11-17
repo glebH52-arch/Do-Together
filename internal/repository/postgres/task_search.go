@@ -5,6 +5,7 @@ import (
 	"do-together/internal/domain"
 	"do-together/internal/repository"
 	"fmt"
+	"uuid"
 )
 
 var taskSortColumns = map[string]struct{}{
@@ -14,7 +15,7 @@ var taskSortColumns = map[string]struct{}{
 	"priority":   {},
 }
 
-func (t *PostgresTaskRepository) Search(ctx context.Context, actorID, projectID int, options repository.TaskSearchOptions) ([]*domain.Task, error) {
+func (t *PostgresTaskRepository) Search(ctx context.Context, actorID, projectID uuid.UUID, options repository.TaskSearchOptions) ([]*domain.Task, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -39,8 +40,8 @@ func (t *PostgresTaskRepository) Search(ctx context.Context, actorID, projectID 
 	for rows.Next() {
 		task := &domain.Task{}
 		if err := rows.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.CreatedBy, &task.Status,
-			&task.CreatedAt, &task.UpdatedAt, &task.DueAt, &task.UUID, &task.Key, &task.Type, &task.Priority,
-			&task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.Position, &task.CompletedAt); err != nil {
+			&task.CreatedAt, &task.UpdatedAt, &task.DueAt, &task.Type, &task.Priority,
+			&task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.CompletedAt); err != nil {
 			return nil, fmt.Errorf("scan task search: %w", err)
 		}
 		tasks = append(tasks, task)

@@ -7,7 +7,7 @@ import (
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
-	"strconv"
+	"uuid"
 
 	"github.com/gorilla/mux"
 )
@@ -24,19 +24,19 @@ func NewInviteHandler(inviteService *service.InviteService) *InviteHandler {
 
 func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -48,7 +48,7 @@ func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if (request.InviteeID > 0) == (request.Email != "") {
+	if (request.InviteeID != uuid.Nil()) == (request.Email != "") {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -82,7 +82,7 @@ func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 func (h *InviteHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -114,19 +114,19 @@ func (h *InviteHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 }
 func (h *InviteHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -141,19 +141,19 @@ func (h *InviteHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 }
 func (h *InviteHandler) DeclineInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return

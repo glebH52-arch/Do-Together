@@ -5,16 +5,18 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"uuid"
 )
 
 type User struct {
-	ID           int
-	Username     string
-	Email        string
-	PasswordHash string
-	Status       UserStatus
-	CreatedAt    time.Time
-	UpdatedAt    *time.Time
+	ID              uuid.UUID
+	Username        string
+	Email           string
+	PasswordHash    string
+	Status          UserStatus
+	CreatedAt       time.Time
+	UpdatedAt       *time.Time
+	EmailVerifiedAt *time.Time
 }
 
 type UserStatus string
@@ -24,10 +26,11 @@ const (
 )
 
 var (
-	ErrEmailInvalid      = errors.New("email is invalid")
-	ErrUsernameEmpty     = errors.New("username is empty")
-	ErrEmailEmpty        = errors.New("email is empty")
-	ErrPasswordHashEmpty = errors.New("password hash is empty")
+	ErrEmailInvalid         = errors.New("email is invalid")
+	ErrUsernameEmpty        = errors.New("username is empty")
+	ErrEmailEmpty           = errors.New("email is empty")
+	ErrPasswordHashEmpty    = errors.New("password hash is empty")
+	ErrEmailAlreadyVerified = errors.New("email already verified")
 )
 
 func validateUsername(username string) (string, error) {
@@ -76,4 +79,23 @@ func NewUser(username string, email string, passwordHash string) (*User, error) 
 	}
 
 	return &user, nil
+}
+
+func (u *User) IsEmailVerified() bool {
+	if u.EmailVerifiedAt == nil {
+		return false
+	}
+	return true
+}
+func (u *User) VerifyEmail(now time.Time) error {
+
+	if u.EmailVerifiedAt != nil {
+		return ErrEmailAlreadyVerified
+	}
+
+	var value *time.Time
+	value = &now
+	u.EmailVerifiedAt = value
+	return nil
+
 }

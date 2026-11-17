@@ -7,16 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"testing"
 	"time"
+	"uuid"
 )
 
 func TestTaskSearch(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
-	projectID, projectErr := strconv.Atoi(os.Getenv("TEST_PROJECT_ID"))
-	actorID, actorErr := strconv.Atoi(os.Getenv("TEST_ACTOR_ID"))
-	if url == "" || projectErr != nil || actorErr != nil || projectID <= 0 || actorID <= 0 {
+	projectID, projectErr := testUUID("TEST_PROJECT_ID")
+	actorID, actorErr := testUUID("TEST_ACTOR_ID")
+	if url == "" || projectErr != nil || actorErr != nil {
 		t.Skip("disposable PostgreSQL fixture is not configured")
 	}
 	ctx := context.Background()
@@ -28,7 +28,13 @@ func TestTaskSearch(t *testing.T) {
 	repo := NewTaskRepository(pool)
 	due := time.Now().Add(24 * time.Hour)
 	title := fmt.Sprintf("Needle-%d", time.Now().UnixNano())
-	task, err := domain.NewTask(actorID, projectID, title, "Searchable description", &due)
+	task, err := domain.NewTask(domain.NewTaskParams{
+		CreatedBy:   actorID,
+		ProjectID:   projectID,
+		Title:       title,
+		Description: "Searchable description",
+		DueAt:       &due,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +58,7 @@ func TestTaskSearch(t *testing.T) {
 	if err != nil || len(tasks) != 0 {
 		t.Fatalf("priority filter: %+v %v", tasks, err)
 	}
-	var outsiderID int
+	var outsiderID uuid.UUID
 	if err := pool.QueryRow(ctx, `SELECT id FROM users WHERE NOT EXISTS (SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=users.id) LIMIT 1`, projectID).Scan(&outsiderID); err == nil {
 		if _, err := repo.Search(ctx, outsiderID, projectID, options); !errors.Is(err, repository.ErrProjectNotFound) {
 			t.Fatalf("outsider search: %v", err)

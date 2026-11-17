@@ -5,6 +5,7 @@ import (
 	"do-together/internal/auth"
 	"net/http"
 	"strings"
+	"uuid"
 )
 
 type contextKey string
@@ -41,10 +42,10 @@ func (m *AuthMiddleware) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
-func UserIDFromContext(ctx context.Context) (int, bool) {
-	userID, ok := ctx.Value(userIDKey).(int)
-	if ok && userID > 0 {
+func UserIDFromContext(ctx context.Context) (uuid.UUID, bool) {
+	userID, ok := ctx.Value(userIDKey).(uuid.UUID)
+	if ok && userID != uuid.Nil() {
 		return userID, true
 	}
-	return 0, false
+	return uuid.Nil(), false
 }

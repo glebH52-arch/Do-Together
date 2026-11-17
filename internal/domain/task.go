@@ -5,28 +5,47 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"uuid"
 )
 
 type Task struct {
-	ID           int
-	UUID         string
-	Key          string
-	Number       int64
-	ProjectID    int
+	ID           uuid.UUID
+	ProjectID    uuid.UUID
 	Title        string
 	Description  string
 	Type         string
 	Priority     string
-	AssigneeID   *int
+	AssigneeID   *uuid.UUID
 	AssigneeName *string
-	CreatedBy    int
+	CreatedBy    uuid.UUID
 	CreatorName  string
 	Status       TaskStatus
-	Position     int64
 	CreatedAt    time.Time
 	UpdatedAt    *time.Time
 	DueAt        *time.Time
 	CompletedAt  *time.Time
+}
+
+type TaskHistory struct {
+	ID         uuid.UUID
+	TaskID     uuid.UUID
+	ActorID    uuid.UUID
+	ActorName  string
+	Action     string
+	OldValues  []byte
+	NewValues  []byte
+	OccurredAt time.Time
+}
+
+type NewTaskParams struct {
+	CreatedBy   uuid.UUID
+	ProjectID   uuid.UUID
+	Title       string
+	Description string
+	DueAt       *time.Time
+	Type        *string
+	Priority    *string
+	AssigneeID  *uuid.UUID
 }
 
 type TaskStatus string
@@ -37,6 +56,23 @@ const (
 	TaskStatusReview     TaskStatus = "review"
 	TaskStatusDone       TaskStatus = "done"
 )
+
+var allowedTaskTransitions = map[TaskStatus]map[TaskStatus]bool{
+	TaskStatusTodo: {
+		TaskStatusInProgress: true,
+		TaskStatusReview:     true,
+	},
+	TaskStatusInProgress: {
+		TaskStatusReview: true,
+	},
+	TaskStatusReview: {
+		TaskStatusInProgress: true,
+		TaskStatusDone:       true,
+	},
+	TaskStatusDone: {
+		TaskStatusInProgress: true,
+	},
+}
 
 var (
 	ErrTaskDescriptionEmpty   = errors.New("Description empty")
@@ -56,7 +92,7 @@ func validateDescription(description string) (string, error) {
 	return description, nil
 }
 
-func validateStatus(status TaskStatus) error {
+func ValidateTaskStatus(status TaskStatus) error {
 	switch status {
 	case TaskStatusTodo,
 		TaskStatusInProgress,
@@ -68,29 +104,56 @@ func validateStatus(status TaskStatus) error {
 	}
 }
 
-func NewTask(createdBy, projectID int, title, Description string, dueAt *time.Time) (*Task, error) {
-	if createdBy <= 0 {
+func ValidateTaskTransition(from, to TaskStatus) error {
+	if !allowedTaskTransitions[from][to] {
+		return ErrInvalidTaskTransition
+	}
+
+	return nil
+}
+
+func ValidateTaskType(value string) error {
+	switch value {
+	case "task", "bug", "feature":
+		return nil
+	default:
+		return ErrInvalidTaskType
+	}
+}
+
+func ValidateTaskPriority(value string) error {
+	switch value {
+	case "low", "medium", "high", "critical":
+		return nil
+	default:
+		return ErrInvalidTaskPriority
+	}
+}
+
+func NewTask(params NewTaskParams) (*Task, error) {
+	if params.CreatedBy == uuid.Nil() {
 		return nil, ErrInvalidUserID
 	}
-	if projectID <= 0 {
+	if params.ProjectID == uuid.Nil() {
 		return nil, ErrInvalidProjectID
 	}
-	taskTitle, err := validateTitle(title)
+	taskTitle, err := validateTitle(params.Title)
 	if err != nil {
 		return nil, err
 	}
-	taskDescription, err := validateDescription(Description)
+	taskDescription, err := validateDescription(params.Description)
 	if err != nil {
 		return nil, err
 	}
 	var taskDueAt *time.Time
-	if dueAt != nil {
-		value := *dueAt
+	if params.DueAt != nil {
+		value := *params.DueAt
 		taskDueAt = &value
 	}
-	return &Task{
-		CreatedBy:   createdBy,
-		ProjectID:   projectID,
+
+	task := &Task{
+		CreatedBy:   params.CreatedBy,
+		ProjectID:   params.ProjectID,
 		Title:       taskTitle,
 		Description: taskDescription,
 		Type:        "task",
@@ -98,7 +161,28 @@ func NewTask(createdBy, projectID int, title, Description string, dueAt *time.Ti
 		Status:      TaskStatusTodo,
 		CreatedAt:   time.Now(),
 		DueAt:       taskDueAt,
-	}, nil
+	}
+	if params.Type != nil {
+		if err := ValidateTaskType(*params.Type); err != nil {
+			return nil, err
+		}
+		task.Type = *params.Type
+	}
+	if params.Priority != nil {
+		if err := ValidateTaskPriority(*params.Priority); err != nil {
+			return nil, err
+		}
+		task.Priority = *params.Priority
+	}
+	if params.AssigneeID != nil {
+		if *params.AssigneeID == uuid.Nil() {
+			return nil, ErrInvalidAssigneeID
+		}
+
+		value := *params.AssigneeID
+		task.AssigneeID = &value
+	}
+	return task, nil
 }
 
 func (t *Task) Update(title, description *string, status *TaskStatus) error {
@@ -123,18 +207,12 @@ func (t *Task) Update(title, description *string, status *TaskStatus) error {
 	}
 
 	if status != nil {
-		if err := validateStatus(*status); err != nil {
+		if err := ValidateTaskStatus(*status); err != nil {
 			return err
 		}
 		if *status != t.Status {
-			allowed := map[TaskStatus]TaskStatus{
-				TaskStatusTodo:       TaskStatusInProgress,
-				TaskStatusInProgress: TaskStatusReview,
-				TaskStatusReview:     TaskStatusDone,
-				TaskStatusDone:       TaskStatusInProgress,
-			}
-			if allowed[t.Status] != *status && !(t.Status == TaskStatusReview && *status == TaskStatusInProgress) {
-				return ErrInvalidTaskTransition
+			if err := ValidateTaskTransition(t.Status, *status); err != nil {
+				return err
 			}
 		}
 		newStatus = *status

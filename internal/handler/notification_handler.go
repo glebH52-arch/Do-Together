@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"uuid"
 
 	"github.com/gorilla/mux"
 )
@@ -19,10 +20,10 @@ func NewNotificationHandler(service *service.NotificationService) *NotificationH
 }
 
 type notificationResponse struct {
-	ID        int64           `json:"id"`
-	ProjectID int             `json:"project_id"`
-	TaskID    *int            `json:"task_id,omitempty"`
-	InviteID  *int            `json:"invite_id,omitempty"`
+	ID        uuid.UUID       `json:"id"`
+	ProjectID uuid.UUID       `json:"project_id"`
+	TaskID    *uuid.UUID      `json:"task_id,omitempty"`
+	InviteID  *uuid.UUID      `json:"invite_id,omitempty"`
 	Kind      string          `json:"kind"`
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt time.Time       `json:"created_at"`
@@ -36,7 +37,7 @@ func notificationToResponse(item *domain.Notification) notificationResponse {
 
 func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
 	}
@@ -70,12 +71,12 @@ func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *NotificationHandler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
 	}
-	id, err := strconv.ParseInt(mux.Vars(r)["id"], 10, 64)
-	if err != nil || id <= 0 {
+	id, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil || id == uuid.Nil() {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}

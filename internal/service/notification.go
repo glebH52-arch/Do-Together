@@ -4,6 +4,7 @@ import (
 	"context"
 	"do-together/internal/domain"
 	"do-together/internal/repository"
+	"uuid"
 )
 
 type NotificationService struct {
@@ -14,8 +15,8 @@ func NewNotificationService(repository repository.NotificationRepository) *Notif
 	return &NotificationService{repository: repository}
 }
 
-func (s *NotificationService) List(ctx context.Context, userID, limit, offset int) ([]*domain.Notification, error) {
-	if userID <= 0 {
+func (s *NotificationService) List(ctx context.Context, userID uuid.UUID, limit, offset int) ([]*domain.Notification, error) {
+	if userID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	if limit <= 0 || limit > 100 || offset < 0 {
@@ -24,11 +25,11 @@ func (s *NotificationService) List(ctx context.Context, userID, limit, offset in
 	return s.repository.List(ctx, userID, limit, offset)
 }
 
-func (s *NotificationService) MarkRead(ctx context.Context, userID int, notificationID int64) error {
-	if userID <= 0 {
+func (s *NotificationService) MarkRead(ctx context.Context, userID uuid.UUID, notificationID uuid.UUID) error {
+	if userID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
-	if notificationID <= 0 {
+	if notificationID == uuid.Nil() {
 		return repository.ErrNotificationNotFound
 	}
 	return s.repository.MarkRead(ctx, userID, notificationID)

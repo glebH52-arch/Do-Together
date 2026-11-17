@@ -45,10 +45,34 @@ func run() error {
 	authManager := auth.NewJWTManager(cfg.JWTSecret, cfg.AccessTokenTTL, "do-together")
 	authMiddleware := middleware.NewAuthMiddleware(authManager)
 	userRepository := postgres.NewPostgresUserRepository(pool)
-	userService := service.NewUserService(userRepository)
+	emailCodeManager, err := auth.NewEmailCodeManager(
+		cfg.EmailVerificationSecret,
+	)
+	if err != nil {
+		return fmt.Errorf("create email code manager: %w", err)
+	}
+
+	verificationRepository :=
+		postgres.NewPostgresEmailVerificationCodeRepository(pool)
+
+	emailOutboxRepository :=
+		postgres.NewPostgresEmailOutboxRepository(pool)
+
+	transactor := postgres.NewPostgresTransactor(pool)
+	userService := service.NewUserService(
+		userRepository,
+		verificationRepository,
+		emailOutboxRepository,
+		transactor,
+		emailCodeManager,
+		cfg.EmailVerificationCodeTTL,
+	)
 	userHandler := handler.NewUserHandler(userService)
 	authService := service.NewAuthService(
 		userRepository,
+		verificationRepository,
+		transactor,
+		emailCodeManager,
 		authManager,
 		refreshSessionRepository,
 		cfg.RefreshTokenIdleTTL,

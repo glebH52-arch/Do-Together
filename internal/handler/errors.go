@@ -38,6 +38,20 @@ func statusFromError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, service.ErrInvalidCredentials):
 		return http.StatusUnauthorized
+	case errors.Is(err, service.ErrEmailNotVerified):
+		return http.StatusForbidden
+	case errors.Is(err, service.ErrInvalidVerificationCode):
+		return http.StatusBadRequest
+	case errors.Is(err, repository.ErrEmailVerificationCodeNotFound):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrVerificationCodeExpired):
+		return http.StatusGone
+	case errors.Is(err, domain.ErrVerificationCodeConsumed):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrVerificationAttemptsExceeded):
+		return http.StatusTooManyRequests
+	case errors.Is(err, domain.ErrEmailAlreadyVerified):
+		return http.StatusConflict
 	case errors.Is(err, repository.ErrProjectMemberNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, repository.ErrProjectMemberAlreadyExists):

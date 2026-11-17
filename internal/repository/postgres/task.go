@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,42 +28,79 @@ func NewTaskRepository(pool *pgxpool.Pool) *PostgresTaskRepository {
 }
 
 func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) (*domain.Task, error) {
-
 	if task == nil {
 		return nil, repository.ErrNilTask
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	newValues, err := json.Marshal(map[string]any{
+		"title":       task.Title,
+		"description": task.Description,
+		"status":      task.Status,
+		"type":        task.Type,
+		"priority":    task.Priority,
+		"assignee_id": task.AssigneeID,
+		"due_at":      task.DueAt,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal created task history: %w", err)
+	}
+	tx, err := t.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin task create: %w", err)
+	}
+	defer tx.Rollback(ctx)
 	if task.AssigneeID != nil {
 		var member bool
-		if err := t.pool.QueryRow(ctx, stmtTaskMemberExists, task.ProjectID, *task.AssigneeID).Scan(&member); err != nil {
-			return nil, err
-		}
-		if !member {
+		err = tx.QueryRow(ctx, stmtLockTaskAssignee, task.ProjectID, *task.AssigneeID).Scan(&member)
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, repository.ErrAssigneeNotMember
 		}
-	}
-
-	err := t.pool.QueryRow(ctx, stmtCreateTask, task.ProjectID, task.Title, task.Description, task.CreatedBy, task.Status, task.CreatedAt, task.DueAt,
-		task.Type, task.Priority, task.AssigneeID).Scan(&task.ID, &task.UUID, &task.Key, &task.Number, &task.Position, &task.CreatorName, &task.AssigneeName)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			if task.AssigneeID != nil {
-				return nil, repository.ErrAssigneeNotMember
-			}
-			return nil, repository.ErrProjectNotFound
+		if err != nil {
+			return nil, fmt.Errorf("lock task assignee: %w", err)
 		}
-		return nil, fmt.Errorf("create task: %w", err)
 	}
-	return task, err
+	var taskID uuid.UUID
+	err = tx.QueryRow(ctx, stmtCreateTask, task.ProjectID, task.Title, task.Description, task.CreatedBy, task.Status,
+		task.CreatedAt, task.DueAt, task.Type, task.Priority, task.AssigneeID).Scan(&taskID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, repository.ErrProjectNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("insert task: %w", err)
+	}
+	var historyID uuid.UUID
+	err = tx.QueryRow(ctx, stmtInsertTaskCreatedHistory, taskID, task.CreatedBy, string(newValues)).Scan(&historyID)
+	if err != nil {
+		return nil, fmt.Errorf("record task creation: %w", err)
+	}
+	if task.AssigneeID != nil {
+		if _, err := tx.Exec(ctx, stmtInsertTaskNotifications, task.ProjectID, taskID, historyID,
+			"assignment_changed", task.CreatedBy, task.AssigneeID, nil); err != nil {
+			return nil, fmt.Errorf("record task assignment notification: %w", err)
+		}
+	}
+	var creatorName string
+	var assigneeName *string
+	err = tx.QueryRow(ctx, stmtGetTaskParticipants, task.CreatedBy, task.AssigneeID).Scan(&creatorName, &assigneeName)
+	if err != nil {
+		return nil, fmt.Errorf("get task participants: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit task create: %w", err)
+	}
+	task.ID = taskID
+	task.CreatorName = creatorName
+	task.AssigneeName = assigneeName
+	return task, nil
 }
 
-func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID int) ([]*domain.Task, error) {
-	if actorID <= 0 {
+func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID uuid.UUID) ([]*domain.Task, error) {
+	if actorID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return nil, repository.ErrProjectNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -86,7 +124,7 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID in
 		var task domain.Task
 
 		err := rows.Scan(&task.ID, &task.ProjectID, &task.Title, &task.Description, &task.CreatedBy, &task.Status, &task.CreatedAt, &task.UpdatedAt, &task.DueAt,
-			&task.UUID, &task.Key, &task.Type, &task.Priority, &task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.Position, &task.CompletedAt)
+			&task.Type, &task.Priority, &task.AssigneeID, &task.AssigneeName, &task.CreatorName, &task.CompletedAt)
 		if err != nil {
 			return nil, fmt.Errorf("rows scan: %w", err)
 		}
@@ -98,11 +136,11 @@ func (t *PostgresTaskRepository) List(ctx context.Context, actorID, projectID in
 	}
 	return tasks, nil
 }
-func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domain.Task, actorID, projectID int) error {
-	if actorID <= 0 {
+func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domain.Task, actorID, projectID uuid.UUID) error {
+	if actorID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
 	if task == nil || before == nil {
@@ -118,14 +156,17 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 	defer tx.Rollback(ctx)
 	if task.AssigneeID != nil {
 		var member bool
-		if err := tx.QueryRow(ctx, stmtTaskMemberExists, projectID, *task.AssigneeID).Scan(&member); err != nil {
-			return err
-		}
-		if !member {
+
+		err := tx.QueryRow(ctx, stmtLockTaskAssignee, projectID, *task.AssigneeID).Scan(&member)
+
+		if errors.Is(err, pgx.ErrNoRows) {
 			return repository.ErrAssigneeNotMember
 		}
+		if err != nil {
+			return fmt.Errorf("lock task assignee: %w", err)
+		}
 	}
-	var updatedID int
+	var updatedID uuid.UUID
 	err = tx.QueryRow(ctx, stmtUpdateTask, task.Title, task.Description, task.Status, task.UpdatedAt,
 		task.ID, projectID, actorID, before.Status, before.UpdatedAt, task.CompletedAt,
 		task.Type, task.Priority, task.AssigneeID, task.DueAt).Scan(&updatedID)
@@ -175,15 +216,15 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 		if err != nil {
 			return err
 		}
-		var historyID int64
+		var historyID uuid.UUID
 		if err := tx.QueryRow(ctx, stmtTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)).Scan(&historyID); err != nil {
 			return fmt.Errorf("record task history: %w", err)
 		}
 		var kind string
-		var first, second *int
+		var first, second *uuid.UUID
 		switch change.action {
 		case "assignee_changed":
-			kind, first = "assignment_changed", task.AssigneeID
+			kind, first, second = "assignment_changed", before.AssigneeID, task.AssigneeID
 		case "status_changed":
 			kind, first, second = "status_changed", &task.CreatedBy, task.AssigneeID
 		case "due_at_changed":
@@ -200,14 +241,14 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 	}
 	return nil
 }
-func (t *PostgresTaskRepository) Remove(ctx context.Context, taskID, actorID, projectID int) error {
-	if actorID <= 0 {
+func (t *PostgresTaskRepository) Remove(ctx context.Context, taskID, actorID, projectID uuid.UUID) error {
+	if actorID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
-	if taskID <= 0 {
+	if taskID == uuid.Nil() {
 		return repository.ErrTaskNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -223,14 +264,14 @@ func (t *PostgresTaskRepository) Remove(ctx context.Context, taskID, actorID, pr
 	return nil
 }
 
-func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID, taskID int) (*domain.Task, error) {
-	if actorID <= 0 {
+func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID, taskID uuid.UUID) (*domain.Task, error) {
+	if actorID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return nil, repository.ErrProjectNotFound
 	}
-	if taskID <= 0 {
+	if taskID == uuid.Nil() {
 		return nil, repository.ErrTaskNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -249,14 +290,11 @@ func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID
 			&task.CreatedAt,
 			&task.UpdatedAt,
 			&task.DueAt,
-			&task.UUID,
-			&task.Key,
 			&task.Type,
 			&task.Priority,
 			&task.AssigneeID,
 			&task.AssigneeName,
 			&task.CreatorName,
-			&task.Position,
 			&task.CompletedAt,
 		)
 	if err != nil {
@@ -266,4 +304,21 @@ func (t *PostgresTaskRepository) GetByID(ctx context.Context, actorID, projectID
 		return nil, fmt.Errorf("get task by id: %w", err)
 	}
 	return task, nil
+}
+
+func (t *PostgresTaskRepository) History(ctx context.Context, actorID, projectID, taskID uuid.UUID, limit, offset int) ([]*domain.TaskHistory, error) {
+	rows, err := t.pool.Query(ctx, `SELECT h.id,h.task_id,h.actor_id,u.username,h.action,h.old_values,h.new_values,h.occurred_at FROM task_history h JOIN users u ON u.id=h.actor_id JOIN tasks t ON t.id=h.task_id JOIN project_members pm ON pm.project_id=t.project_id AND pm.user_id=$1 WHERE t.project_id=$2 AND t.id=$3 ORDER BY h.occurred_at DESC,h.id DESC LIMIT $4 OFFSET $5`, actorID, projectID, taskID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]*domain.TaskHistory, 0)
+	for rows.Next() {
+		var h domain.TaskHistory
+		if err := rows.Scan(&h.ID, &h.TaskID, &h.ActorID, &h.ActorName, &h.Action, &h.OldValues, &h.NewValues, &h.OccurredAt); err != nil {
+			return nil, err
+		}
+		items = append(items, &h)
+	}
+	return items, rows.Err()
 }
