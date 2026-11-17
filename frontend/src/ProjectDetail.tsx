@@ -27,6 +27,7 @@ import {
 } from "./api";
 import { ProjectMembers } from "./ProjectMembers";
 import type { Locale } from "./i18n";
+import "./workspace-overrides.css";
 const statuses: TaskStatus[] = ["todo", "in_progress", "review", "done"],
   statusName = {
     todo: "К выполнению",
@@ -130,6 +131,7 @@ export function ProjectDetail({
     [drag, setDrag] = useState<UUID | null>(null),
     [moving,setMoving]=useState<Set<UUID>>(new Set()),
     [activityOpen,setActivityOpen]=useState(false),
+    [teamOpen,setTeamOpen]=useState(false),
     [activity,setActivity]=useState<Activity[]>([]),
     [activityCursor,setActivityCursor]=useState<string|null>(null);
   const requestSequence=useRef(0);
@@ -400,15 +402,10 @@ export function ProjectDetail({
             Далее
           </button>
         </div>
-        <ProjectMembers
-          projectID={projectID}
-          user={user}
-          accessToken={accessToken}
-          onMembers={setMembers}
-          locale={locale}
-        />
+        <div className="team-trigger-row"><button className="secondary" onClick={()=>setTeamOpen(true)}>Команда</button></div>
       </main>
       {activityOpen&&<aside className="activity-panel" role="dialog" aria-modal="true" aria-label="История проекта"><div className="panel-heading"><h2>{locale==="ru"?"История проекта":"Project history"}</h2><button className="icon-control" aria-label="Закрыть" onClick={()=>setActivityOpen(false)}><X/></button></div><div className="activity-list">{activity.map(a=><article key={a.id}><time>{new Date(a.occurred_at).toLocaleString(locale==="ru"?"ru-RU":"en-US")}</time><p><strong>{a.actor.name}</strong> {activityText(a,locale)}</p>{Object.keys(a.data.new??{}).length>1&&<details><summary>{locale==="ru"?"Изменения":"Changes"}</summary><pre>{JSON.stringify({old:a.data.old,new:a.data.new},null,2)}</pre></details>}</article>)}{activityCursor&&<button className="secondary" onClick={()=>void moreActivity()}>{locale==="ru"?"Загрузить ещё":"Load more"}</button>}</div></aside>}
+      {teamOpen&&<div className="team-overlay" role="dialog" aria-modal="true" aria-label="Команда" onClick={()=>setTeamOpen(false)}><aside className="team-drawer" onClick={e=>e.stopPropagation()}><div className="panel-heading"><h2>Команда</h2><button className="icon-control" aria-label="Закрыть" onClick={()=>setTeamOpen(false)}><X/></button></div><ProjectMembers projectID={projectID} user={user} accessToken={accessToken} onMembers={setMembers} locale={locale}/></aside></div>}
       {(create || selected) && (
         <TaskDialog
           task={create ? null : selected}
@@ -480,6 +477,8 @@ function TaskDialog({
     [assignee, setAssignee] = useState(task?.assignee_id ?? ""),
     [due, setDue] = useState(task?.due_at ? task.due_at.slice(0, 16) : ""),
     [body, setBody] = useState(""),
+    [editingComment, setEditingComment] = useState<UUID | null>(null),
+    [editingBody, setEditingBody] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function save(e: FormEvent) {
@@ -673,7 +672,7 @@ function TaskDialog({
               </div>
             </form>
           ))}
-        {task && tab === "comments" && (
+        {task && tab === "comments" && false && (
           <>
             <form className="comment-form" onSubmit={add}>
               <textarea
@@ -754,6 +753,7 @@ function TaskDialog({
             ))}
           </div>
         )}
+        {task && <aside className="task-comments-side"><div className="task-comments-heading"><h3>Комментарии</h3><span>{comments.length}</span></div><div className="task-comments-list">{comments.length===0&&<p className="muted">Пока нет комментариев.</p>}{comments.map(c=><article key={c.id}><div><strong>{c.author_name}</strong><small>{fmt(c.created_at)}</small></div>{editingComment===c.id?<><textarea value={editingBody} onChange={e=>setEditingBody(e.target.value)} rows={3}/><div className="inline-actions"><button onClick={()=>void api.editComment(accessToken,projectID,task!.id,c.id,editingBody.trim()).then(()=>{setComments(comments.map(x=>x.id===c.id?{...x,body:editingBody.trim()}:x));setEditingComment(null)})}>Сохранить</button><button className="secondary" onClick={()=>setEditingComment(null)}>Отмена</button></div></>:<><p>{c.body}</p>{c.author_id===user.id&&<button className="text-button" onClick={()=>{setEditingComment(c.id);setEditingBody(c.body)}}>Изменить</button>}</>}</article>)}</div><form className="task-comment-compose" onSubmit={add}><textarea value={body} onChange={e=>setBody(e.target.value)} placeholder="Написать комментарий" required rows={3}/><button>Отправить</button></form></aside>}
       </div>
     </div>
   );
