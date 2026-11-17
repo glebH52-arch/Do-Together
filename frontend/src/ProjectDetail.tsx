@@ -700,7 +700,7 @@ function TaskDialog({
                               .editComment(
                                 accessToken,
                                 projectID,
-                                task.id,
+                                task!.id,
                                 c.id,
                                 v,
                               )
@@ -722,7 +722,7 @@ function TaskDialog({
                             .deleteComment(
                               accessToken,
                               projectID,
-                              task.id,
+                              task!.id,
                               c.id,
                             )
                             .then(() =>
