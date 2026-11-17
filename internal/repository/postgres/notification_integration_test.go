@@ -6,16 +6,16 @@ import (
 	"do-together/internal/repository"
 	"errors"
 	"os"
-	"strconv"
 	"testing"
 	"time"
+	"uuid"
 )
 
 func TestTaskNotifications(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
-	projectID, projectErr := strconv.Atoi(os.Getenv("TEST_PROJECT_ID"))
-	actorID, actorErr := strconv.Atoi(os.Getenv("TEST_ACTOR_ID"))
-	if url == "" || projectErr != nil || actorErr != nil || projectID <= 0 || actorID <= 0 {
+	projectID, projectErr := testUUID("TEST_PROJECT_ID")
+	actorID, actorErr := testUUID("TEST_ACTOR_ID")
+	if url == "" || projectErr != nil || actorErr != nil {
 		t.Skip("disposable PostgreSQL fixture is not configured")
 	}
 	ctx := context.Background()
@@ -24,7 +24,7 @@ func TestTaskNotifications(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	var recipientID int
+	var recipientID uuid.UUID
 	if err := pool.QueryRow(ctx, `SELECT id FROM users WHERE id <> $1 AND NOT EXISTS
 		(SELECT 1 FROM project_members WHERE project_id = $2 AND user_id = users.id) LIMIT 1`, actorID, projectID).Scan(&recipientID); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,12 @@ func TestTaskNotifications(t *testing.T) {
 	defer pool.Exec(ctx, `DELETE FROM project_members WHERE project_id=$1 AND user_id=$2`, projectID, recipientID)
 	taskRepo := NewTaskRepository(pool)
 	notificationRepo := NewNotificationRepository(pool)
-	task, err := domain.NewTask(actorID, projectID, "Notification test", "Notification description", nil)
+	task, err := domain.NewTask(domain.NewTaskParams{
+		CreatedBy:   actorID,
+		ProjectID:   projectID,
+		Title:       "Notification test",
+		Description: "Notification description",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +52,12 @@ func TestTaskNotifications(t *testing.T) {
 	before := *task
 	status := domain.TaskStatusInProgress
 	due := time.Now().Add(48 * time.Hour)
-	if err := task.ApplyChanges(domain.TaskChanges{Status: &status, DueAt: domain.OptionalTime{Set: true, Value: &due}}); err != nil {
+	changed, err := task.ApplyChanges(domain.TaskChanges{Status: &status, DueAt: domain.OptionalTime{Set: true, Value: &due}})
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("task changes were not detected")
 	}
 	if err := taskRepo.Update(ctx, &before, task, actorID, projectID); err != nil {
 		t.Fatal(err)
@@ -58,7 +67,7 @@ func TestTaskNotifications(t *testing.T) {
 		t.Fatal(err)
 	}
 	counts := map[string]int{}
-	var notificationID int64
+	var notificationID uuid.UUID
 	for _, item := range items {
 		if item.TaskID != nil && *item.TaskID == task.ID {
 			counts[item.Kind]++

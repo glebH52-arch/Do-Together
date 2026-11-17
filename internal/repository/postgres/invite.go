@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -25,10 +26,7 @@ func NewPostgresInviteRepository(pool *pgxpool.Pool) *PostgresInviteRepository {
 	}
 }
 
-func (p *PostgresInviteRepository) Create(
-	ctx context.Context,
-	invite *domain.Invite,
-) error {
+func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.Invite) error {
 	if invite == nil {
 		return domain.ErrInviteNotFound
 	}
@@ -43,75 +41,72 @@ func (p *PostgresInviteRepository) Create(
 	if _, err := tx.Exec(ctx, stmtExpireStaleInvites, invite.ProjectID, invite.InviteeID, invite.CreatedAt); err != nil {
 		return fmt.Errorf("expire stale invites: %w", err)
 	}
-	err = tx.QueryRow(ctx, stmtCreateInvite, invite.ProjectID, invite.InviterID, invite.InviteeID, invite.Role, invite.Status, invite.ExpiresAt, invite.CreatedAt).Scan(&invite.ID, &invite.ProjectTitle, &invite.InviterName)
+	var canInvite bool
+	if err := tx.QueryRow(ctx, stmtCanInvite, invite.ProjectID, invite.InviterID).Scan(&canInvite); err != nil {
+		return fmt.Errorf("check invite permission: %w", err)
+	}
+	if !canInvite {
+		return repository.ErrForbidden
+	}
+	var isMember bool
+	if err := tx.QueryRow(ctx, stmtIsProjectMember, invite.ProjectID, invite.InviteeID).Scan(&isMember); err != nil {
+		return fmt.Errorf("check invitee membership: %w", err)
+	}
+	if isMember {
+		return repository.ErrProjectMemberAlreadyExists
+	}
+	var inviteID uuid.UUID
+	err = tx.QueryRow(ctx, stmtCreateInvite, invite.ProjectID, invite.InviterID, invite.InviteeID, invite.Role, invite.Status, invite.ExpiresAt, invite.CreatedAt).Scan(&inviteID)
 	if err != nil {
-
-		if errors.Is(err, pgx.ErrNoRows) {
-			var canInvite, isMember bool
-			if checkErr := tx.QueryRow(ctx, stmtCanInvite, invite.ProjectID, invite.InviterID).Scan(&canInvite); checkErr != nil {
-				return checkErr
-			}
-			if !canInvite {
-				return repository.ErrForbidden
-			}
-			if checkErr := tx.QueryRow(ctx, stmtIsProjectMember, invite.ProjectID, invite.InviteeID).Scan(&isMember); checkErr != nil {
-				return checkErr
-			}
-			if isMember {
-				return repository.ErrProjectMemberAlreadyExists
-			}
-			return repository.ErrForbidden
-		}
-
 		var pgErr *pgconn.PgError
-
 		if errors.As(err, &pgErr) {
-
 			switch pgErr.Code {
-
 			case "23505":
 				if pgErr.ConstraintName == "invites_one_pending_idx" {
 					return domain.ErrPendingInviteAlreadyExists
 				}
-
 			case "23503":
 				switch pgErr.ConstraintName {
-
 				case "invites_project_id_fkey":
 					return repository.ErrProjectNotFound
-
 				case "invites_inviter_id_fkey",
 					"invites_invitee_id_fkey":
 					return repository.ErrUserNotFound
 				}
 			}
 		}
-
 		return fmt.Errorf("insert invite: %w", err)
+	}
+	if _, err := tx.Exec(ctx, stmtInsertInviteNotification, invite.InviteeID, invite.ProjectID, inviteID); err != nil {
+		return fmt.Errorf("insert invite notification: %w", err)
+	}
+	var projectTitle, inviterName string
+	if err := tx.QueryRow(ctx, stmtGetInvitePresentation, invite.ProjectID, invite.InviterID).Scan(&projectTitle, &inviterName); err != nil {
+		return fmt.Errorf("get invite presentation: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit invite: %w", err)
 	}
+	invite.ID = inviteID
+	invite.ProjectTitle = projectTitle
+	invite.InviterName = inviterName
 	return nil
 }
 
-func (p *PostgresInviteRepository) FindInviteeIDByEmail(ctx context.Context, email string) (int, error) {
-	var id int
+func (p *PostgresInviteRepository) FindInviteeIDByEmail(ctx context.Context, email string) (uuid.UUID, error) {
+	var id uuid.UUID
 	err := p.pool.QueryRow(ctx, stmtFindInviteeByEmail, email).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, repository.ErrUserNotFound
+		return uuid.Nil(), repository.ErrUserNotFound
 	}
 	if err != nil {
-		return 0, fmt.Errorf("find invitee: %w", err)
+		return uuid.Nil(), fmt.Errorf("find invitee: %w", err)
 	}
 	return id, nil
 }
 
-func (p *PostgresInviteRepository) List(
-	ctx context.Context,
-	inviteeID int,
-) ([]*domain.Invite, error) {
-	if inviteeID <= 0 {
+func (p *PostgresInviteRepository) List(ctx context.Context, inviteeID uuid.UUID) ([]*domain.Invite, error) {
+	if inviteeID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -143,11 +138,7 @@ func (p *PostgresInviteRepository) List(
 	return invites, nil
 }
 
-func (p *PostgresInviteRepository) Accept(
-	ctx context.Context,
-	inviteeID, inviteID int,
-	now time.Time,
-) error {
+func (p *PostgresInviteRepository) Accept(ctx context.Context, inviteeID, inviteID uuid.UUID, now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -202,11 +193,7 @@ func (p *PostgresInviteRepository) Accept(
 	return nil
 }
 
-func (p *PostgresInviteRepository) Decline(
-	ctx context.Context,
-	inviteeID, inviteID int,
-	now time.Time,
-) error {
+func (p *PostgresInviteRepository) Decline(ctx context.Context, inviteeID, inviteID uuid.UUID, now time.Time) error {
 
 	if err := ctx.Err(); err != nil {
 		return err

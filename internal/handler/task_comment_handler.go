@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"uuid"
 
 	"github.com/gorilla/mux"
 )
@@ -25,9 +26,9 @@ type commentRequest struct {
 }
 
 type commentResponse struct {
-	ID         int64      `json:"id"`
-	TaskID     int        `json:"task_id"`
-	AuthorID   int        `json:"author_id"`
+	ID         uuid.UUID  `json:"id"`
+	TaskID     uuid.UUID  `json:"task_id"`
+	AuthorID   uuid.UUID  `json:"author_id"`
 	AuthorName string     `json:"author_name"`
 	Body       string     `json:"body"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -39,17 +40,17 @@ func commentToResponse(comment *domain.TaskComment) commentResponse {
 		AuthorName: comment.AuthorName, Body: comment.Body, CreatedAt: comment.CreatedAt, UpdatedAt: comment.UpdatedAt}
 }
 
-func commentIDs(r *http.Request) (actorID, projectID, taskID int, ok bool) {
+func commentIDs(r *http.Request) (actorID, projectID, taskID uuid.UUID, ok bool) {
 	actorID, ok = middleware.UserIDFromContext(r.Context())
-	if !ok || actorID <= 0 {
-		return 0, 0, 0, false
+	if !ok || actorID == uuid.Nil() {
+		return uuid.Nil(), uuid.Nil(), uuid.Nil(), false
 	}
-	projectID, err := strconv.Atoi(mux.Vars(r)["id"])
-	if err != nil || projectID <= 0 {
-		return 0, 0, 0, false
+	projectID, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil || projectID == uuid.Nil() {
+		return uuid.Nil(), uuid.Nil(), uuid.Nil(), false
 	}
-	taskID, err = strconv.Atoi(mux.Vars(r)["taskID"])
-	return actorID, projectID, taskID, err == nil && taskID > 0
+	taskID, err = uuid.Parse(mux.Vars(r)["taskID"])
+	return actorID, projectID, taskID, err == nil && taskID != uuid.Nil()
 }
 
 func (h *TaskCommentHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -110,8 +111,8 @@ func (h *TaskCommentHandler) List(w http.ResponseWriter, r *http.Request) {
 
 func (h *TaskCommentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	actorID, projectID, taskID, ok := commentIDs(r)
-	commentID, err := strconv.ParseInt(mux.Vars(r)["commentID"], 10, 64)
-	if !ok || err != nil || commentID <= 0 {
+	commentID, err := uuid.Parse(mux.Vars(r)["commentID"])
+	if !ok || err != nil || commentID == uuid.Nil() {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
@@ -130,8 +131,8 @@ func (h *TaskCommentHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 func (h *TaskCommentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	actorID, projectID, taskID, ok := commentIDs(r)
-	commentID, err := strconv.ParseInt(mux.Vars(r)["commentID"], 10, 64)
-	if !ok || err != nil || commentID <= 0 {
+	commentID, err := uuid.Parse(mux.Vars(r)["commentID"])
+	if !ok || err != nil || commentID == uuid.Nil() {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}

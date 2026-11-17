@@ -5,6 +5,7 @@ import (
 	"do-together/internal/domain"
 	"errors"
 	"time"
+	"uuid"
 )
 
 var (
@@ -17,18 +18,18 @@ var (
 
 type TaskRepository interface {
 	Create(ctx context.Context, task *domain.Task) (*domain.Task, error)
-	List(ctx context.Context, actorID, projectID int) ([]*domain.Task, error)
-	Update(ctx context.Context, before, after *domain.Task, actorID, projectID int) error
-	Remove(ctx context.Context, taskID, actorID, projectID int) error
-	GetByID(ctx context.Context, actorID, projectID, taskID int) (*domain.Task, error)
-	Move(ctx context.Context, actorID, projectID, taskID int, expectedStatus domain.TaskStatus, expectedPosition int64, beforeTaskID *int) error
-	Search(ctx context.Context, actorID, projectID int, options TaskSearchOptions) ([]*domain.Task, error)
+	List(ctx context.Context, actorID, projectID uuid.UUID) ([]*domain.Task, error)
+	Update(ctx context.Context, before, after *domain.Task, actorID, projectID uuid.UUID) error
+	Remove(ctx context.Context, taskID, actorID, projectID uuid.UUID) error
+	GetByID(ctx context.Context, actorID, projectID, taskID uuid.UUID) (*domain.Task, error)
+	Search(ctx context.Context, actorID, projectID uuid.UUID, options TaskSearchOptions) ([]*domain.Task, error)
+	History(ctx context.Context, actorID, projectID, taskID uuid.UUID, limit, offset int) ([]*domain.TaskHistory, error)
 }
 
 type TaskSearchOptions struct {
 	Query      string
 	Status     string
-	AssigneeID *int
+	AssigneeID *uuid.UUID
 	Priority   string
 	Type       string
 	DueBefore  *time.Time

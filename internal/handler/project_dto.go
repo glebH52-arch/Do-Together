@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+	"uuid"
 )
 
 type updateProjectRequest struct {
@@ -20,8 +21,8 @@ type projectRequest struct {
 }
 
 type projectResponse struct {
-	ID        int        `json:"id"`
-	CreatedBy int        `json:"created_by"`
+	ID        uuid.UUID  `json:"id"`
+	CreatedBy uuid.UUID  `json:"created_by"`
 	Title     string     `json:"title"`
 	Goal      string     `json:"goal"`
 	Status    string     `json:"status"`

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -46,7 +47,7 @@ var rotateRefreshSessionScript = goredis.NewScript(`
 		return -1
 	end
 
-	local userID = tonumber(values[1])
+	local userID = values[1]
 	local storedHash = values[2]
 	local absoluteExpiresAt = tonumber(values[3])
 
@@ -68,7 +69,7 @@ var rotateRefreshSessionScript = goredis.NewScript(`
 	redis.call("HSET", KEYS[1], "token_hash", ARGV[2])
 	redis.call("PEXPIRE", KEYS[1], newTTL)
 
-	return userID
+	return {4, userID}
 `)
 
 type RefreshSessionRepository struct {
@@ -98,7 +99,7 @@ func (r *RefreshSessionRepository) Create(ctx context.Context, session *domain.R
 	if idleTTL <= 0 {
 		return fmt.Errorf("idle TTL must be positive")
 	}
-	result, err := createRefreshSessionScript.Run(ctx, r.client, []string{key}, session.UserID, session.TokenHash, session.CreatedAt.UnixMilli(), session.AbsoluteExpiresAt.UnixMilli(), idleTTL.Milliseconds()).Int()
+	result, err := createRefreshSessionScript.Run(ctx, r.client, []string{key}, session.UserID.String(), session.TokenHash, session.CreatedAt.UnixMilli(), session.AbsoluteExpiresAt.UnixMilli(), idleTTL.Milliseconds()).Int()
 	if err != nil {
 		return errors.Join(
 			repository.ErrRedisUnavailable,
@@ -115,15 +116,15 @@ func (r *RefreshSessionRepository) Create(ctx context.Context, session *domain.R
 
 	return nil
 }
-func (r *RefreshSessionRepository) Rotate(ctx context.Context, sessionID, oldHash, newHash string, now time.Time, idleTTL time.Duration) (userID int, err error) {
+func (r *RefreshSessionRepository) Rotate(ctx context.Context, sessionID, oldHash, newHash string, now time.Time, idleTTL time.Duration) (userID uuid.UUID, err error) {
 	if err := ctx.Err(); err != nil {
-		return 0, err
+		return uuid.Nil(), err
 	}
 	if sessionID == "" || oldHash == "" || newHash == "" {
-		return 0, fmt.Errorf("refresh session rotation arguments are required")
+		return uuid.Nil(), fmt.Errorf("refresh session rotation arguments are required")
 	}
 	if idleTTL <= 0 {
-		return 0, fmt.Errorf("idle TTL must be positive")
+		return uuid.Nil(), fmt.Errorf("idle TTL must be positive")
 	}
 	key := redisKeyFromSessionID(sessionID)
 	result, err := rotateRefreshSessionScript.Run(
@@ -134,29 +135,36 @@ func (r *RefreshSessionRepository) Rotate(ctx context.Context, sessionID, oldHas
 		newHash,
 		now.UnixMilli(),
 		idleTTL.Milliseconds(),
-	).Int()
+	).Slice()
 	if err != nil {
-		return 0, errors.Join(
+		return uuid.Nil(), errors.Join(
 			repository.ErrRedisUnavailable,
 			fmt.Errorf("rotate refresh session: %w", err),
 		)
 	}
-	switch result {
-	case -1:
-		return 0, repository.ErrSessionNotFound
-	case -2:
-		return 0, repository.ErrTokenMismatch
-	case -3:
-		return 0, repository.ErrSessionExpired
-	default:
-		if result <= 0 {
-			return 0, fmt.Errorf(
-				"unexpected rotate refresh session result: %d",
-				result,
-			)
+	if len(result) == 1 {
+		code, _ := result[0].(int64)
+		switch code {
+		case -1:
+			return uuid.Nil(), repository.ErrSessionNotFound
+		case -2:
+			return uuid.Nil(), repository.ErrTokenMismatch
+		case -3:
+			return uuid.Nil(), repository.ErrSessionExpired
 		}
-		return result, nil
 	}
+	if len(result) != 2 {
+		return uuid.Nil(), fmt.Errorf("unexpected rotate refresh session result: %v", result)
+	}
+	value, ok := result[1].(string)
+	if !ok {
+		return uuid.Nil(), fmt.Errorf("unexpected refresh user id: %v", result[1])
+	}
+	parsed, parseErr := uuid.Parse(value)
+	if parseErr != nil || parsed == uuid.Nil() {
+		return uuid.Nil(), fmt.Errorf("invalid refresh user id")
+	}
+	return parsed, nil
 }
 func (r *RefreshSessionRepository) Delete(ctx context.Context, sessionID string) error {
 	if err := ctx.Err(); err != nil {

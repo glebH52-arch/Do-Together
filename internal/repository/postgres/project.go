@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,14 +26,14 @@ func NewPostgresProjectRepository(pool *pgxpool.Pool) *PostgresProjectRepository
 
 }
 
-func (p *PostgresProjectRepository) Create(ctx context.Context, userID int, project *domain.Project) error {
+func (p *PostgresProjectRepository) Create(ctx context.Context, userID uuid.UUID, project *domain.Project) error {
 	if project == nil {
 		return repository.ErrNilProject
 	}
-	if project.ID != 0 {
+	if project.ID != uuid.Nil() {
 		return repository.ErrProjectAlreadySaved
 	}
-	if userID <= 0 {
+	if userID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -47,7 +48,7 @@ func (p *PostgresProjectRepository) Create(ctx context.Context, userID int, proj
 		_ = tx.Rollback(ctx)
 	}()
 
-	var id int
+	var id uuid.UUID
 	err = tx.QueryRow(ctx, stmtCreateProject, userID, project.Title, project.Goal, project.Status, project.CreatedAt).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("insert project: %w", err)
@@ -64,8 +65,8 @@ func (p *PostgresProjectRepository) Create(ctx context.Context, userID int, proj
 	project.CreatedBy = userID
 	return nil
 }
-func (p *PostgresProjectRepository) GetByID(ctx context.Context, userID, id int) (*domain.Project, error) {
-	if userID <= 0 {
+func (p *PostgresProjectRepository) GetByID(ctx context.Context, userID, id uuid.UUID) (*domain.Project, error) {
+	if userID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -82,8 +83,8 @@ func (p *PostgresProjectRepository) GetByID(ctx context.Context, userID, id int)
 	}
 	return &project, nil
 }
-func (p *PostgresProjectRepository) List(ctx context.Context, userID int, options repository.ProjectListOptions) ([]*domain.Project, error) {
-	if userID <= 0 {
+func (p *PostgresProjectRepository) List(ctx context.Context, userID uuid.UUID, options repository.ProjectListOptions) ([]*domain.Project, error) {
+	if userID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -113,14 +114,14 @@ func (p *PostgresProjectRepository) List(ctx context.Context, userID int, option
 	}
 	return projects, nil
 }
-func (p *PostgresProjectRepository) Update(ctx context.Context, userID int, project *domain.Project) error {
-	if userID <= 0 {
+func (p *PostgresProjectRepository) Update(ctx context.Context, userID uuid.UUID, project *domain.Project) error {
+	if userID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
 	if project == nil {
 		return repository.ErrNilProject
 	}
-	if project.ID <= 0 {
+	if project.ID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
 	if err := ctx.Err(); err != nil {

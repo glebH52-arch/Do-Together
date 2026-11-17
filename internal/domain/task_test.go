@@ -3,10 +3,16 @@ package domain
 import (
 	"errors"
 	"testing"
+	"uuid"
 )
 
 func TestTaskStatusTransitionsAndCompletion(t *testing.T) {
-	task, err := NewTask(1, 1, "Task", "Description", nil)
+	task, err := NewTask(NewTaskParams{
+		CreatedBy:   uuid.New(),
+		ProjectID:   uuid.New(),
+		Title:       "Task",
+		Description: "Description",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +38,12 @@ func TestTaskStatusTransitionsAndCompletion(t *testing.T) {
 }
 
 func TestTaskRejectsInvalidTransition(t *testing.T) {
-	task, err := NewTask(1, 1, "Task", "Description", nil)
+	task, err := NewTask(NewTaskParams{
+		CreatedBy:   uuid.New(),
+		ProjectID:   uuid.New(),
+		Title:       "Task",
+		Description: "Description",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

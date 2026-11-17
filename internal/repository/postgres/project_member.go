@@ -6,6 +6,7 @@ import (
 	"do-together/internal/repository"
 	"errors"
 	"fmt"
+	"uuid"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,7 +29,7 @@ var (
 	ErrNilProjectMember = errors.New("project member is nil")
 )
 
-func (p *PostgresProjectMemberRepository) Add(ctx context.Context, actorID int, member *domain.ProjectMember) error {
+func (p *PostgresProjectMemberRepository) Add(ctx context.Context, actorID uuid.UUID, member *domain.ProjectMember) error {
 	if member == nil {
 		return ErrNilProjectMember
 	}
@@ -53,11 +54,11 @@ func (p *PostgresProjectMemberRepository) Add(ctx context.Context, actorID int, 
 	}
 	return nil
 }
-func (p *PostgresProjectMemberRepository) List(ctx context.Context, actorID, projectID int) ([]*domain.ProjectMember, error) {
-	if actorID <= 0 {
+func (p *PostgresProjectMemberRepository) List(ctx context.Context, actorID, projectID uuid.UUID) ([]*domain.ProjectMember, error) {
+	if actorID == uuid.Nil() {
 		return nil, repository.ErrProjectNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return nil, repository.ErrProjectNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -90,14 +91,14 @@ func (p *PostgresProjectMemberRepository) List(ctx context.Context, actorID, pro
 	}
 	return projectMembers, nil
 }
-func (p *PostgresProjectMemberRepository) UpdateRole(ctx context.Context, actorID, projectID, targetUserID int, role domain.ProjectMemberRole) error {
-	if actorID <= 0 {
+func (p *PostgresProjectMemberRepository) UpdateRole(ctx context.Context, actorID, projectID, targetUserID uuid.UUID, role domain.ProjectMemberRole) error {
+	if actorID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
-	if targetUserID <= 0 {
+	if targetUserID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -113,14 +114,14 @@ func (p *PostgresProjectMemberRepository) UpdateRole(ctx context.Context, actorI
 	}
 	return nil
 }
-func (p *PostgresProjectMemberRepository) Remove(ctx context.Context, actorID, projectID, targetUserID int) error {
-	if actorID <= 0 {
+func (p *PostgresProjectMemberRepository) Remove(ctx context.Context, actorID, projectID, targetUserID uuid.UUID) error {
+	if actorID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
-	if targetUserID <= 0 {
+	if targetUserID == uuid.Nil() {
 		return repository.ErrProjectNotFound
 	}
 	if err := ctx.Err(); err != nil {

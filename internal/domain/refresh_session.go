@@ -1,10 +1,13 @@
 package domain
 
-import "time"
+import (
+	"time"
+	"uuid"
+)
 
 type RefreshSession struct {
 	SessionID         string
-	UserID            int
+	UserID            uuid.UUID
 	TokenHash         string
 	CreatedAt         time.Time
 	AbsoluteExpiresAt time.Time

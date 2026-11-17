@@ -33,3 +33,6 @@ jobs:
 
       - name: Build application
         run: go build -o do-together ./cmd
+
+      - name: Build email worker
+        run: go build -o email-worker ./cmd/email-worker

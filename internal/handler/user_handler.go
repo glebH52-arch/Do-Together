@@ -6,6 +6,7 @@ import (
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
+	"uuid"
 )
 
 type UserHandler struct {
@@ -50,7 +51,7 @@ func (u *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (u *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	id, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || id <= 0 {
+	if !ok || id == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return

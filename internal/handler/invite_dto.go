@@ -3,19 +3,20 @@ package handler
 import (
 	"do-together/internal/domain"
 	"time"
+	"uuid"
 )
 
 type createInviteRequest struct {
-	InviteeID int    `json:"invitee_id"`
-	Email     string `json:"email"`
-	Role      string `json:"role"`
+	InviteeID uuid.UUID `json:"invitee_id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
 }
 
 type inviteResponse struct {
-	ID           int        `json:"id"`
-	ProjectID    int        `json:"project_id"`
-	InviterID    int        `json:"inviter_id"`
-	InviteeID    int        `json:"invitee_id"`
+	ID           uuid.UUID  `json:"id"`
+	ProjectID    uuid.UUID  `json:"project_id"`
+	InviterID    uuid.UUID  `json:"inviter_id"`
+	InviteeID    uuid.UUID  `json:"invitee_id"`
 	ProjectTitle string     `json:"project_title"`
 	InviterName  string     `json:"inviter_name"`
 	Role         string     `json:"role"`

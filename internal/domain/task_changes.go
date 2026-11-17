@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"time"
+	"uuid"
 )
 
 var (
@@ -11,9 +12,9 @@ var (
 	ErrInvalidAssigneeID   = errors.New("invalid assignee ID")
 )
 
-type OptionalInt struct {
+type OptionalUUID struct {
 	Set   bool
-	Value *int
+	Value *uuid.UUID
 }
 type OptionalTime struct {
 	Set   bool
@@ -26,29 +27,11 @@ type TaskChanges struct {
 	Status      *TaskStatus
 	Type        *string
 	Priority    *string
-	AssigneeID  OptionalInt
+	AssigneeID  OptionalUUID
 	DueAt       OptionalTime
 }
 
-func ValidateTaskType(value string) error {
-	switch value {
-	case "task", "bug", "feature":
-		return nil
-	default:
-		return ErrInvalidTaskType
-	}
-}
-
-func ValidateTaskPriority(value string) error {
-	switch value {
-	case "low", "medium", "high", "critical":
-		return nil
-	default:
-		return ErrInvalidTaskPriority
-	}
-}
-
-func sameInt(left, right *int) bool {
+func sameUUID(left, right *uuid.UUID) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil
 	}
@@ -62,44 +45,74 @@ func sameTime(left, right *time.Time) bool {
 	return left.Equal(*right)
 }
 
-func (t *Task) ApplyChanges(changes TaskChanges) error {
+func (t *Task) ApplyChanges(changes TaskChanges) (bool, error) {
+
 	if changes.Type != nil {
 		if err := ValidateTaskType(*changes.Type); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if changes.Priority != nil {
 		if err := ValidateTaskPriority(*changes.Priority); err != nil {
-			return err
+			return false, err
 		}
 	}
-	if changes.AssigneeID.Set && changes.AssigneeID.Value != nil && *changes.AssigneeID.Value <= 0 {
-		return ErrInvalidAssigneeID
+	if changes.AssigneeID.Set &&
+		changes.AssigneeID.Value != nil &&
+		*changes.AssigneeID.Value == uuid.Nil() {
+		return false, ErrInvalidAssigneeID
 	}
+
+	oldTitle := t.Title
+	oldDescription := t.Description
+	oldStatus := t.Status
+	oldType := t.Type
+	oldPriority := t.Priority
+	oldAssigneeID := t.AssigneeID
+	oldDueAt := t.DueAt
 	oldUpdatedAt := t.UpdatedAt
+
 	if err := t.Update(changes.Title, changes.Description, changes.Status); err != nil {
-		return err
+		return false, err
 	}
-	extraChanged := false
-	if changes.Type != nil && t.Type != *changes.Type {
+
+	if changes.Type != nil {
 		t.Type = *changes.Type
-		extraChanged = true
 	}
-	if changes.Priority != nil && t.Priority != *changes.Priority {
+	if changes.Priority != nil {
 		t.Priority = *changes.Priority
-		extraChanged = true
 	}
-	if changes.AssigneeID.Set && !sameInt(t.AssigneeID, changes.AssigneeID.Value) {
-		t.AssigneeID = changes.AssigneeID.Value
-		extraChanged = true
+
+	if changes.AssigneeID.Set {
+		if changes.AssigneeID.Value == nil {
+			t.AssigneeID = nil
+		} else {
+			value := *changes.AssigneeID.Value
+			t.AssigneeID = &value
+		}
 	}
-	if changes.DueAt.Set && !sameTime(t.DueAt, changes.DueAt.Value) {
-		t.DueAt = changes.DueAt.Value
-		extraChanged = true
+
+	if changes.DueAt.Set {
+		if changes.DueAt.Value == nil {
+			t.DueAt = nil
+		} else {
+			value := *changes.DueAt.Value
+			t.DueAt = &value
+		}
 	}
-	if extraChanged && t.UpdatedAt == oldUpdatedAt {
+
+	changed := t.Title != oldTitle ||
+		t.Description != oldDescription ||
+		t.Status != oldStatus ||
+		t.Type != oldType ||
+		t.Priority != oldPriority ||
+		!sameUUID(t.AssigneeID, oldAssigneeID) ||
+		!sameTime(t.DueAt, oldDueAt)
+
+	if changed && t.UpdatedAt == oldUpdatedAt {
 		now := time.Now()
 		t.UpdatedAt = &now
 	}
-	return nil
+
+	return changed, nil
 }

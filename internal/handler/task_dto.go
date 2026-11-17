@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+	"uuid"
 )
 
 type taskRequest struct {
@@ -13,7 +14,7 @@ type taskRequest struct {
 	DueAt       *time.Time `json:"due_at,omitempty"`
 	Type        *string    `json:"type,omitempty"`
 	Priority    *string    `json:"priority,omitempty"`
-	AssigneeID  *int       `json:"assignee_id,omitempty"`
+	AssigneeID  *uuid.UUID `json:"assignee_id,omitempty"`
 }
 
 type taskUpdateRequest struct {
@@ -26,18 +27,18 @@ type taskUpdateRequest struct {
 	DueAt       json.RawMessage `json:"due_at"`
 }
 
-func parseOptionalInt(raw json.RawMessage) (domain.OptionalInt, error) {
+func parseOptionalUUID(raw json.RawMessage) (domain.OptionalUUID, error) {
 	if raw == nil {
-		return domain.OptionalInt{}, nil
+		return domain.OptionalUUID{}, nil
 	}
 	if string(raw) == "null" {
-		return domain.OptionalInt{Set: true}, nil
+		return domain.OptionalUUID{Set: true}, nil
 	}
-	var value int
+	var value uuid.UUID
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return domain.OptionalInt{}, err
+		return domain.OptionalUUID{}, err
 	}
-	return domain.OptionalInt{Set: true, Value: &value}, nil
+	return domain.OptionalUUID{Set: true, Value: &value}, nil
 }
 
 func parseOptionalTime(raw json.RawMessage) (domain.OptionalTime, error) {
@@ -57,12 +58,6 @@ func parseOptionalTime(raw json.RawMessage) (domain.OptionalTime, error) {
 	return domain.OptionalTime{Set: true, Value: &value}, nil
 }
 
-type taskMoveRequest struct {
-	ExpectedStatus   domain.TaskStatus `json:"expected_status"`
-	ExpectedPosition int64             `json:"expected_position"`
-	BeforeTaskID     *int              `json:"before_task_id"`
-}
-
 type boardResponse struct {
 	Todo       []taskResponse `json:"todo"`
 	InProgress []taskResponse `json:"in_progress"`
@@ -71,19 +66,16 @@ type boardResponse struct {
 }
 
 type taskResponse struct {
-	ID           int        `json:"id"`
-	UUID         string     `json:"uuid"`
-	Key          string     `json:"key"`
+	ID           uuid.UUID  `json:"id"`
 	Title        string     `json:"title"`
 	Description  string     `json:"description"`
 	Type         string     `json:"type"`
 	Priority     string     `json:"priority"`
-	AssigneeID   *int       `json:"assignee_id"`
+	AssigneeID   *uuid.UUID `json:"assignee_id"`
 	AssigneeName *string    `json:"assignee_name"`
-	CreatedBy    int        `json:"created_by"`
+	CreatedBy    uuid.UUID  `json:"created_by"`
 	CreatorName  string     `json:"creator_name"`
 	Status       string     `json:"status"`
-	Position     int64      `json:"position"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    *time.Time `json:"update_at,omitempty"`
 	DueAt        *time.Time `json:"due_at,omitempty"`
@@ -93,8 +85,6 @@ type taskResponse struct {
 func taskToResponse(task *domain.Task) taskResponse {
 	return taskResponse{
 		ID:           task.ID,
-		UUID:         task.UUID,
-		Key:          task.Key,
 		Title:        task.Title,
 		Description:  task.Description,
 		Type:         task.Type,
@@ -104,7 +94,6 @@ func taskToResponse(task *domain.Task) taskResponse {
 		CreatedBy:    task.CreatedBy,
 		CreatorName:  task.CreatorName,
 		Status:       string(task.Status),
-		Position:     task.Position,
 		CreatedAt:    task.CreatedAt,
 		UpdatedAt:    task.UpdatedAt,
 		DueAt:        task.DueAt,

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"uuid"
 )
 
 var (
@@ -22,8 +23,8 @@ const (
 )
 
 type Project struct {
-	ID        int
-	CreatedBy int
+	ID        uuid.UUID
+	CreatedBy uuid.UUID
 	Title     string
 	Goal      string
 	Status    ProjectStatus
@@ -53,7 +54,7 @@ func validateGoal(goal string) (string, error) {
 	return goal, nil
 }
 
-func NewProject(userID int, title string, goal string) (*Project, error) {
+func NewProject(userID uuid.UUID, title string, goal string) (*Project, error) {
 
 	title, err := validateTitle(title)
 	if err != nil {

@@ -54,8 +54,10 @@ services:
       REDIS_DB: ${REDIS_DB}
       REFRESH_TOKEN_IDLE_TTL: ${REFRESH_TOKEN_IDLE_TTL}
       REFRESH_TOKEN_ABSOLUTE_TTL: ${REFRESH_TOKEN_ABSOLUTE_TTL}
+      EMAIL_VERIFICATION_SECRET: ${EMAIL_VERIFICATION_SECRET}
+      EMAIL_VERIFICATION_CODE_TTL: ${EMAIL_VERIFICATION_CODE_TTL}
     ports:
-      - "8080:8080"
+      - "${API_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +71,25 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    stop_grace_period: 12s
+
+  email-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["./email-worker"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      EMAIL_TRANSPORT: ${EMAIL_TRANSPORT:-log}
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      BREVO_SENDER_EMAIL: ${BREVO_SENDER_EMAIL}
+      BREVO_SENDER_NAME: ${BREVO_SENDER_NAME}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
     stop_grace_period: 12s
         
 volumes:

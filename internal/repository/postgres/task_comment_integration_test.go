@@ -6,15 +6,15 @@ import (
 	"do-together/internal/repository"
 	"errors"
 	"os"
-	"strconv"
 	"testing"
+	"uuid"
 )
 
 func TestTaskComments(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
-	projectID, projectErr := strconv.Atoi(os.Getenv("TEST_PROJECT_ID"))
-	actorID, actorErr := strconv.Atoi(os.Getenv("TEST_ACTOR_ID"))
-	if url == "" || projectErr != nil || actorErr != nil || projectID <= 0 || actorID <= 0 {
+	projectID, projectErr := testUUID("TEST_PROJECT_ID")
+	actorID, actorErr := testUUID("TEST_ACTOR_ID")
+	if url == "" || projectErr != nil || actorErr != nil {
 		t.Skip("disposable PostgreSQL fixture is not configured")
 	}
 	ctx := context.Background()
@@ -23,7 +23,12 @@ func TestTaskComments(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	task, err := domain.NewTask(actorID, projectID, "Comments test", "Comments description", nil)
+	task, err := domain.NewTask(domain.NewTaskParams{
+		CreatedBy:   actorID,
+		ProjectID:   projectID,
+		Title:       "Comments test",
+		Description: "Comments description",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +49,7 @@ func TestTaskComments(t *testing.T) {
 	if err != nil || len(comments) != 0 {
 		t.Fatalf("page: %+v %v", comments, err)
 	}
-	var outsiderID int
+	var outsiderID uuid.UUID
 	if err := pool.QueryRow(ctx, `SELECT id FROM users WHERE NOT EXISTS (SELECT 1 FROM project_members WHERE project_id=$1 AND user_id=users.id) LIMIT 1`, projectID).Scan(&outsiderID); err == nil {
 		if _, err := repo.List(ctx, outsiderID, projectID, task.ID, 20, 0); !errors.Is(err, repository.ErrTaskNotFound) {
 			t.Fatalf("outsider list: %v", err)
