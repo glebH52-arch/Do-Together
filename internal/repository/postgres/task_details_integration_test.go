@@ -62,7 +62,7 @@ func TestTaskDetailsAndHistory(t *testing.T) {
 		t.Fatalf("task details not saved: %+v %v", loaded, err)
 	}
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM task_history WHERE task_id=$1 AND action IN ('status_changed','priority_changed','assignee_changed','due_at_changed')`, task.ID).Scan(&count); err != nil || count != 4 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM task_history WHERE task_id=$1 AND action = 'task.updated'`, task.ID).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("history: %d %v", count, err)
 	}
 	invalidAssignee := uuid.New()

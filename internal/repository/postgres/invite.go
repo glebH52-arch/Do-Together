@@ -81,6 +81,17 @@ func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.In
 	if err := tx.QueryRow(ctx, stmtGetInvitePresentation, invite.ProjectID, invite.InviterID).Scan(&projectTitle, &inviterName); err != nil {
 		return fmt.Errorf("get invite presentation: %w", err)
 	}
+	var inviteeName string
+	if err := tx.QueryRow(ctx, `SELECT display_name FROM users WHERE id = $1`, invite.InviteeID).Scan(&inviteeName); err != nil {
+		return fmt.Errorf("get invitee presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, invite.ProjectID, invite.InviterID, inviteID, "invite.sent", "invite", projectTitle, nil, map[string]any{
+		"invitee_id":   invite.InviteeID,
+		"invitee_name": inviteeName,
+		"role":         invite.Role,
+	}); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit invite: %w", err)
 	}
@@ -194,6 +205,18 @@ func (p *PostgresInviteRepository) Accept(ctx context.Context, inviteeID, invite
 	if commandTag.RowsAffected() != 1 {
 		return domain.ErrInviteNotFound
 	}
+	var projectTitle, inviteeName string
+	if err := tx.QueryRow(ctx, `SELECT project.title, invitee.display_name
+		FROM projects AS project JOIN users AS invitee ON invitee.id = $2
+		WHERE project.id = $1`, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
+		return fmt.Errorf("get accepted invite presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, invite.ProjectID, inviteeID, invite.ID, "invite.accepted", "invite", projectTitle,
+		map[string]any{"status": "pending"}, map[string]any{
+			"status": "accepted", "invitee_id": invite.InviteeID, "invitee_name": inviteeName, "role": invite.Role,
+		}); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit accept invite transaction: %w", err)
@@ -202,16 +225,43 @@ func (p *PostgresInviteRepository) Accept(ctx context.Context, inviteeID, invite
 }
 
 func (p *PostgresInviteRepository) Decline(ctx context.Context, inviteeID, inviteID uuid.UUID, now time.Time) error {
-
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtDeclineInvite, inviteID, inviteeID, now)
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin decline invite: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var invite domain.Invite
+	err = tx.QueryRow(ctx, stmtGetInviteForUpdate, inviteID, inviteeID).Scan(&invite.ID, &invite.ProjectID, &invite.InviterID, &invite.InviteeID, &invite.Role, &invite.Status, &invite.ExpiresAt, &invite.CreatedAt, &invite.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrInviteNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock invite for decline: %w", err)
+	}
+	commandTag, err := tx.Exec(ctx, stmtDeclineInvite, inviteID, inviteeID, now)
 	if err != nil {
 		return fmt.Errorf("decline invite: %w", err)
 	}
 	if commandTag.RowsAffected() != 1 {
 		return domain.ErrInviteNotFound
+	}
+	var projectTitle, inviteeName string
+	if err := tx.QueryRow(ctx, `SELECT project.title, invitee.display_name
+		FROM projects AS project JOIN users AS invitee ON invitee.id = $2
+		WHERE project.id = $1`, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
+		return fmt.Errorf("get declined invite presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, invite.ProjectID, inviteeID, invite.ID, "invite.declined", "invite", projectTitle,
+		map[string]any{"status": "pending"}, map[string]any{
+			"status": "declined", "invitee_id": invite.InviteeID, "invitee_name": inviteeName, "role": invite.Role,
+		}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit decline invite: %w", err)
 	}
 	return nil
 }

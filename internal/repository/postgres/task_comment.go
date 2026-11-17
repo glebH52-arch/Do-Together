@@ -82,7 +82,7 @@ func (r *PostgresTaskCommentRepository) Update(ctx context.Context, actorID, pro
 		return err
 	}
 	if _, err := tx.Exec(ctx, stmtCommentEditHistory,
-		taskID, actorID, commentID, oldBody, body); err != nil {
+		taskID, actorID, commentID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -103,7 +103,7 @@ func (r *PostgresTaskCommentRepository) Delete(ctx context.Context, actorID, pro
 		return err
 	}
 	if _, err := tx.Exec(ctx, stmtCommentDeleteHistory,
-		taskID, actorID, commentID, oldBody); err != nil {
+		taskID, actorID, commentID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
