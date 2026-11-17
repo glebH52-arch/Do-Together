@@ -4,6 +4,7 @@ import { api, refreshKey, request, setSession, subscribeSession, type Invite, ty
 import { Projects } from "./Projects";
 import { ProjectDetail } from "./ProjectDetail";
 import { type Locale, fmt, useCopy } from "./i18n";
+import { BoardPreview } from "./BoardPreview";
 
 type Mode = "login" | "register" | "verify";
 type Theme = "light" | "dark" | "system";
@@ -35,6 +36,8 @@ export function App() {
   async function logout(){if(tokens)try{await request("/auth/logout",{body:{refresh_token:tokens.refresh_token}})}catch{}setSession(null);nav("/")}
   function toggle(next:typeof popover,e:React.MouseEvent<HTMLButtonElement>){triggerRef.current=e.currentTarget;setPopover(v=>v===next?null:next)}
   const scheduleClose=()=>{window.clearTimeout(closeTimer.current);closeTimer.current=window.setTimeout(()=>{if(!popRef.current?.contains(document.activeElement))setPopover(null)},180)};
+  if (location.pathname === "/preview/board-a") return <BoardPreview variant="a"/>;
+  if (location.pathname === "/preview/board-b") return <BoardPreview variant="b"/>;
   if(loading)return <main className="auth-shell"><div className="auth-card">{locale==="ru"?"Восстанавливаем сессию…":"Restoring session…"}</div></main>;
   if(user&&tokens){const taskMatch=new RegExp(`^/projects/(${uuid})/tasks/(${uuid})$`).exec(path),projectMatch=new RegExp(`^/projects/(${uuid})$`).exec(path);return <div className="app-shell">
     <header className="topbar"><button className="brand" onClick={()=>nav("/projects")}>Do Together</button><nav className="top-actions" ref={popRef} onMouseLeave={scheduleClose} onMouseEnter={()=>clearTimeout(closeTimer.current)}>
