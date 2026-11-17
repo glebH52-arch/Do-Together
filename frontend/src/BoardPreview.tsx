@@ -19,13 +19,14 @@ const demo = [
 const people = ["Анна", "Илья", "Мария"];
 
 export function BoardPreview({ variant }: { variant: "a" | "b" }) {
+  const forcedMobile = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("mobile");
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState("");
   const filtered = useMemo(() => demo.filter(([title, status]) => !query || title.toLowerCase().includes(query.toLowerCase())).filter(([, status]) => !selectedStatus || status === selectedStatus), [query, selectedStatus]);
   const chip = selectedStatus ? names[selectedStatus as TaskStatus] : null;
-  return <main className={`preview-shell preview-${variant}`}>
+  return <main className={`preview-shell preview-${variant} ${forcedMobile ? "preview-forced-mobile" : ""}`}>
     {variant === "b" && <aside className="preview-rail"><strong>DT</strong><button aria-label="Проекты">⌂</button><button aria-label="Команда"><Users/></button><button aria-label="Настройки">⚙</button></aside>}
     <section className="preview-page">
       <header className="preview-header"><div><div className="crumbs">Проекты <span>/</span> Запуск продукта</div><h1>Запуск продукта</h1></div><div className="preview-actions"><div className="avatar-stack">{people.map((p, i)=><span key={p} title={p}>{p[0]}</span>)}</div>{variant === "b" && <button className="secondary" onClick={() => setTeamOpen(true)}><Users/> Команда</button>}<button className="secondary" aria-label="История проекта"><History/></button><button><Plus/> Задача</button></div></header>
