@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"uuid"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -36,7 +37,12 @@ func (p *PostgresProjectMemberRepository) Add(ctx context.Context, actorID uuid.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtAddProjectMember, member.ProjectID, member.UserID, member.Role, member.JoinedAt, actorID)
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin add project member: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	commandTag, err := tx.Exec(ctx, stmtAddProjectMember, member.ProjectID, member.UserID, member.Role, member.JoinedAt, actorID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
@@ -51,6 +57,18 @@ func (p *PostgresProjectMemberRepository) Add(ctx context.Context, actorID uuid.
 	}
 	if commandTag.RowsAffected() == 0 {
 		return repository.ErrProjectNotFound
+	}
+	var targetName string
+	if err := tx.QueryRow(ctx, `SELECT display_name FROM users WHERE id = $1`, member.UserID).Scan(&targetName); err != nil {
+		return fmt.Errorf("get added member presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, member.ProjectID, actorID, member.UserID, "member.joined", "member", targetName, nil, map[string]any{
+		"user_id": member.UserID, "display_name": targetName, "role": member.Role,
+	}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit add project member: %w", err)
 	}
 	return nil
 }
@@ -104,13 +122,40 @@ func (p *PostgresProjectMemberRepository) UpdateRole(ctx context.Context, actorI
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtUpdateRole, role, targetUserID, projectID, actorID)
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin update project member: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var oldRole domain.ProjectMemberRole
+	var targetName string
+	err = tx.QueryRow(ctx, `SELECT member.role, target.display_name
+		FROM project_members AS member JOIN users AS target ON target.id = member.user_id
+		WHERE member.project_id = $1 AND member.user_id = $2 FOR UPDATE OF member`, projectID, targetUserID).Scan(&oldRole, &targetName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrProjectNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock project member: %w", err)
+	}
+	if oldRole == role {
+		return nil
+	}
+	commandTag, err := tx.Exec(ctx, stmtUpdateRole, role, targetUserID, projectID, actorID)
 	if err != nil {
 
 		return fmt.Errorf("update project member: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
 		return repository.ErrProjectNotFound
+	}
+	if err := insertProjectActivity(ctx, tx, projectID, actorID, targetUserID, "member.role_changed", "member", targetName,
+		map[string]any{"role": oldRole, "user_id": targetUserID, "display_name": targetName},
+		map[string]any{"role": role, "user_id": targetUserID, "display_name": targetName}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit update project member: %w", err)
 	}
 	return nil
 }
@@ -127,13 +172,36 @@ func (p *PostgresProjectMemberRepository) Remove(ctx context.Context, actorID, p
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtRemoveProjectMember, targetUserID, projectID, actorID)
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin remove project member: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var oldRole domain.ProjectMemberRole
+	var targetName string
+	err = tx.QueryRow(ctx, `SELECT member.role, target.display_name
+		FROM project_members AS member JOIN users AS target ON target.id = member.user_id
+		WHERE member.project_id = $1 AND member.user_id = $2 FOR UPDATE OF member`, projectID, targetUserID).Scan(&oldRole, &targetName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrProjectNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock project member for removal: %w", err)
+	}
+	commandTag, err := tx.Exec(ctx, stmtRemoveProjectMember, targetUserID, projectID, actorID)
 	if err != nil {
 
 		return fmt.Errorf("remove project member: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
 		return repository.ErrProjectNotFound
+	}
+	if err := insertProjectActivity(ctx, tx, projectID, actorID, targetUserID, "member.removed", "member", targetName,
+		map[string]any{"role": oldRole, "user_id": targetUserID, "display_name": targetName}, nil); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit remove project member: %w", err)
 	}
 	return nil
 }

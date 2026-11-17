@@ -39,6 +39,7 @@ const (
 	stmtGetTaskByID                        = "get_task_by_id"
 	stmtUpdateTask                         = "update_task"
 	stmtRemoveTask                         = "remove_task"
+	stmtLockTaskForDelete                  = "lock_task_for_delete"
 	stmtTaskMemberExists                   = "task_member_exists"
 	stmtLockTaskAssignee                   = "lock_task_assignee"
 	stmtTaskHistoryInsert                  = "task_history_insert"
@@ -231,8 +232,13 @@ FOR UPDATE
 		FROM project_members AS pm
 		WHERE pm.project_id=$1 AND pm.user_id=$4
 		RETURNING id`,
-	stmtInsertTaskCreatedHistory: `INSERT INTO task_history(task_id, actor_id, action, new_values)
-		VALUES ($1, $2, 'created', $3::jsonb)
+	stmtInsertTaskCreatedHistory: `INSERT INTO task_history(
+			task_id, project_id, actor_id, actor_name, action,
+			object_type, object_id, object_title, new_values
+		)
+		SELECT $1, $2, $3, actor.display_name, 'task.created',
+			'task', $1, $4, $5::jsonb
+		FROM users AS actor WHERE actor.id = $3
 		RETURNING id`,
 	stmtGetTaskParticipants: `SELECT creator.display_name, creator.avatar_filename, creator.avatar_updated_at,
 		assignee.display_name, assignee.avatar_filename, assignee.avatar_updated_at
@@ -317,6 +323,12 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 	  AND pm.user_id = $3
 )
 	`,
+	stmtLockTaskForDelete: `SELECT target.title
+		FROM tasks AS target
+		JOIN project_members AS member
+			ON member.project_id = target.project_id AND member.user_id = $2
+		WHERE target.id = $1 AND target.project_id = $3 AND target.created_by = $2
+		FOR UPDATE OF target`,
 
 	stmtTaskMemberExists: `SELECT EXISTS (SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`,
 	stmtLockTaskAssignee: `
@@ -326,8 +338,14 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 	  AND user_id = $2
 	FOR KEY SHARE
 	`,
-	stmtTaskHistoryInsert: `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, $3, $4::jsonb, $5::jsonb) RETURNING id`,
+	stmtTaskHistoryInsert: `INSERT INTO task_history(
+			task_id, project_id, actor_id, actor_name, action,
+			object_type, object_id, object_title, old_values, new_values
+		)
+		SELECT $1, $2, $3, actor.display_name, $4,
+			'task', $1, $5, $6::jsonb, $7::jsonb
+		FROM users AS actor WHERE actor.id = $3
+		RETURNING id`,
 	stmtInsertTaskNotifications: `INSERT INTO notifications(recipient_id, project_id, task_id, source_history_id, kind, payload)
 		SELECT DISTINCT recipient.id, $1::uuid, $2::uuid, $3::uuid, $4::text,
 			jsonb_build_object(
@@ -358,9 +376,17 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 		WHERE t.project_id = $1 AND t.id = $2
 		RETURNING id, task_id, author_id, body, created_at, updated_at
 	), history AS (
-		INSERT INTO task_history(task_id, actor_id, action, new_values)
-		SELECT task_id, author_id, 'comment_created', jsonb_build_object('comment_id', id, 'body', body)
-		FROM inserted RETURNING task_id
+		INSERT INTO task_history(
+			task_id, project_id, actor_id, actor_name, action,
+			object_type, object_id, object_title, new_values
+		)
+		SELECT inserted.task_id, task.project_id, inserted.author_id, author.display_name,
+			'comment.created', 'comment', inserted.id, task.title,
+			jsonb_build_object('comment_id', inserted.id, 'task_id', task.id)
+		FROM inserted
+		JOIN tasks AS task ON task.id = inserted.task_id
+		JOIN users AS author ON author.id = inserted.author_id
+		RETURNING task_id
 	)
 	SELECT i.id, i.task_id, i.author_id, u.username, i.body, i.created_at, i.updated_at
 	FROM inserted AS i JOIN history AS h ON h.task_id = i.task_id
@@ -376,15 +402,27 @@ ORDER BY CASE t.status WHEN 'todo' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'review
 		JOIN project_members AS pm ON pm.project_id = t.project_id AND pm.user_id = $4
 		WHERE c.id = $1 AND c.task_id = $2 AND t.project_id = $3 AND c.author_id = $4 FOR UPDATE OF c`,
 	stmtUpdateOwnComment: `UPDATE task_comments SET body = $1, updated_at = NOW() WHERE id = $2`,
-	stmtCommentEditHistory: `INSERT INTO task_history(task_id, actor_id, action, old_values, new_values)
-		VALUES ($1, $2, 'edited', jsonb_build_object('comment_id', $3::uuid, 'body', $4::text), jsonb_build_object('comment_id', $3::uuid, 'body', $5::text))`,
+	stmtCommentEditHistory: `INSERT INTO task_history(
+			task_id, project_id, actor_id, actor_name, action,
+			object_type, object_id, object_title, new_values
+		)
+		SELECT task.id, task.project_id, $2, actor.display_name, 'comment.updated',
+			'comment', $3, task.title, jsonb_build_object('comment_id', $3::uuid, 'task_id', task.id)
+		FROM tasks AS task JOIN users AS actor ON actor.id = $2
+		WHERE task.id = $1`,
 	stmtDeleteOwnComment: `DELETE FROM task_comments AS c USING tasks AS t, project_members AS pm
 		WHERE c.id = $1 AND c.task_id = $2 AND c.author_id = $4
 		AND t.id = c.task_id AND t.project_id = $3
 		AND pm.project_id = t.project_id AND pm.user_id = $4
 		RETURNING c.body`,
-	stmtCommentDeleteHistory: `INSERT INTO task_history(task_id, actor_id, action, old_values)
-		VALUES ($1, $2, 'comment_deleted', jsonb_build_object('comment_id', $3::uuid, 'body', $4::text))`,
+	stmtCommentDeleteHistory: `INSERT INTO task_history(
+			task_id, project_id, actor_id, actor_name, action,
+			object_type, object_id, object_title, new_values
+		)
+		SELECT task.id, task.project_id, $2, actor.display_name, 'comment.deleted',
+			'comment', $3, task.title, jsonb_build_object('comment_id', $3::uuid, 'task_id', task.id)
+		FROM tasks AS task JOIN users AS actor ON actor.id = $2
+		WHERE task.id = $1`,
 	stmtSearchTasks: `SELECT t.id, t.project_id, t.title, t.description, t.created_by, t.status,
 		t.created_at, t.updated_at, t.due_at, t.task_type, t.priority,
 		t.assignee_id, assignee.display_name, assignee.avatar_filename, assignee.avatar_updated_at,

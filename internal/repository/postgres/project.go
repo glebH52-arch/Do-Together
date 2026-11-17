@@ -57,6 +57,11 @@ func (p *PostgresProjectRepository) Create(ctx context.Context, userID uuid.UUID
 	if err != nil {
 		return fmt.Errorf("insert project member: %w", err)
 	}
+	if err := insertProjectActivity(ctx, tx, id, userID, id, "project.created", "project", project.Title, nil, map[string]any{
+		"title": project.Title,
+	}); err != nil {
+		return err
+	}
 	err = tx.Commit(ctx)
 	if err != nil {
 		return fmt.Errorf("commit: %w", err)
@@ -127,13 +132,55 @@ func (p *PostgresProjectRepository) Update(ctx context.Context, userID uuid.UUID
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtUpdateProject, project.Title, project.Goal, project.Status, project.UpdatedAt, project.ID, userID)
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin update project transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var oldTitle, oldGoal string
+	var oldStatus domain.ProjectStatus
+	var oldUpdatedAt *time.Time
+	err = tx.QueryRow(ctx, `SELECT p.title, p.goal, p.status, p.updated_at
+		FROM projects AS p
+		JOIN project_members AS member ON member.project_id = p.id
+		WHERE p.id = $1 AND member.user_id = $2 AND member.role = 'creator'
+		FOR UPDATE OF p`, project.ID, userID).Scan(&oldTitle, &oldGoal, &oldStatus, &oldUpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return repository.ErrProjectNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock project: %w", err)
+	}
+	if oldTitle == project.Title && oldGoal == project.Goal && oldStatus == project.Status {
+		project.UpdatedAt = oldUpdatedAt
+		return nil
+	}
+	commandTag, err := tx.Exec(ctx, stmtUpdateProject, project.Title, project.Goal, project.Status, project.UpdatedAt, project.ID, userID)
 
 	if err != nil {
 		return fmt.Errorf("update project: %w", err)
 	}
 	if commandTag.RowsAffected() == 0 {
 		return repository.ErrProjectNotFound
+	}
+	if oldTitle != project.Title {
+		if err := insertProjectActivity(ctx, tx, project.ID, userID, project.ID, "project.renamed", "project", project.Title,
+			map[string]any{"title": oldTitle}, map[string]any{"title": project.Title}); err != nil {
+			return err
+		}
+	}
+	if oldStatus != project.Status {
+		action := "project.archived"
+		if project.Status == domain.ProjectStatusActive {
+			action = "project.restored"
+		}
+		if err := insertProjectActivity(ctx, tx, project.ID, userID, project.ID, action, "project", project.Title,
+			map[string]any{"status": oldStatus}, map[string]any{"status": project.Status}); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit update project transaction: %w", err)
 	}
 
 	return nil

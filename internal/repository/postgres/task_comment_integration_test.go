@@ -72,7 +72,7 @@ func TestTaskComments(t *testing.T) {
 		t.Fatalf("deleted comment remains: %+v %v", comments, err)
 	}
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM task_history WHERE task_id=$1 AND action IN ('comment_created','comment_deleted')`, task.ID).Scan(&count); err != nil || count != 2 {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM task_history WHERE task_id=$1 AND action IN ('comment.created','comment.deleted')`, task.ID).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("history: %d %v", count, err)
 	}
 }

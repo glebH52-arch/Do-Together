@@ -36,7 +36,6 @@ func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) 
 	}
 	newValues, err := json.Marshal(map[string]any{
 		"title":       task.Title,
-		"description": task.Description,
 		"status":      task.Status,
 		"type":        task.Type,
 		"priority":    task.Priority,
@@ -71,7 +70,8 @@ func (t *PostgresTaskRepository) Create(ctx context.Context, task *domain.Task) 
 		return nil, fmt.Errorf("insert task: %w", err)
 	}
 	var historyID uuid.UUID
-	err = tx.QueryRow(ctx, stmtInsertTaskCreatedHistory, taskID, task.CreatedBy, string(newValues)).Scan(&historyID)
+	err = tx.QueryRow(ctx, stmtInsertTaskCreatedHistory,
+		taskID, task.ProjectID, task.CreatedBy, task.Title, string(newValues)).Scan(&historyID)
 	if err != nil {
 		return nil, fmt.Errorf("record task creation: %w", err)
 	}
@@ -181,62 +181,56 @@ func (t *PostgresTaskRepository) Update(ctx context.Context, before, task *domai
 	if err != nil {
 		return fmt.Errorf("update task: %w", err)
 	}
-	type historyChange struct {
-		action    string
-		old, next map[string]any
+	changes := make(map[string]any)
+	addChange := func(field string, oldValue, newValue any) {
+		changes[field] = map[string]any{"old": oldValue, "new": newValue}
 	}
-	changes := make([]historyChange, 0, 5)
-	oldValues := make(map[string]any)
-	newValues := make(map[string]any)
 	if before.Title != task.Title {
-		oldValues["title"], newValues["title"] = before.Title, task.Title
+		addChange("title", before.Title, task.Title)
 	}
 	if before.Description != task.Description {
-		oldValues["description"], newValues["description"] = before.Description, task.Description
+		changes["description"] = map[string]any{"changed": true}
 	}
 	if before.Type != task.Type {
-		oldValues["type"], newValues["type"] = before.Type, task.Type
-	}
-	if len(oldValues) > 0 {
-		changes = append(changes, historyChange{"edited", oldValues, newValues})
+		addChange("type", before.Type, task.Type)
 	}
 	if before.Status != task.Status {
-		changes = append(changes, historyChange{"status_changed", map[string]any{"status": before.Status}, map[string]any{"status": task.Status}})
+		addChange("status", before.Status, task.Status)
 	}
 	if before.Priority != task.Priority {
-		changes = append(changes, historyChange{"priority_changed", map[string]any{"priority": before.Priority}, map[string]any{"priority": task.Priority}})
+		addChange("priority", before.Priority, task.Priority)
 	}
 	if !reflect.DeepEqual(before.AssigneeID, task.AssigneeID) {
-		changes = append(changes, historyChange{"assignee_changed", map[string]any{"assignee_id": before.AssigneeID}, map[string]any{"assignee_id": task.AssigneeID}})
+		addChange("assignee_id", before.AssigneeID, task.AssigneeID)
 	}
 	if !reflect.DeepEqual(before.DueAt, task.DueAt) {
-		changes = append(changes, historyChange{"due_at_changed", map[string]any{"due_at": before.DueAt}, map[string]any{"due_at": task.DueAt}})
+		addChange("due_at", before.DueAt, task.DueAt)
 	}
-	for _, change := range changes {
-		oldJSON, err := json.Marshal(change.old)
-		if err != nil {
-			return err
-		}
-		newJSON, err := json.Marshal(change.next)
+	if len(changes) > 0 {
+		newJSON, err := json.Marshal(map[string]any{"changes": changes})
 		if err != nil {
 			return err
 		}
 		var historyID uuid.UUID
-		if err := tx.QueryRow(ctx, stmtTaskHistoryInsert, updatedID, actorID, change.action, string(oldJSON), string(newJSON)).Scan(&historyID); err != nil {
+		if err := tx.QueryRow(ctx, stmtTaskHistoryInsert,
+			updatedID, projectID, actorID, "task.updated", task.Title, nil, string(newJSON)).Scan(&historyID); err != nil {
 			return fmt.Errorf("record task history: %w", err)
 		}
-		var kind string
-		var first, second *uuid.UUID
-		switch change.action {
-		case "assignee_changed":
-			kind, first, second = string(domain.NotificationKindAssignmentChanged), before.AssigneeID, task.AssigneeID
-		case "status_changed":
-			kind, first, second = string(domain.NotificationKindStatusChanged), &task.CreatedBy, task.AssigneeID
-		case "due_at_changed":
-			kind, first, second = string(domain.NotificationKindDueAtChanged), &task.CreatedBy, task.AssigneeID
+		notifications := []struct {
+			changed       bool
+			kind          domain.NotificationKind
+			first, second *uuid.UUID
+		}{
+			{!reflect.DeepEqual(before.AssigneeID, task.AssigneeID), domain.NotificationKindAssignmentChanged, before.AssigneeID, task.AssigneeID},
+			{before.Status != task.Status, domain.NotificationKindStatusChanged, &task.CreatedBy, task.AssigneeID},
+			{!reflect.DeepEqual(before.DueAt, task.DueAt), domain.NotificationKindDueAtChanged, &task.CreatedBy, task.AssigneeID},
 		}
-		if kind != "" {
-			if _, err := tx.Exec(ctx, stmtInsertTaskNotifications, projectID, task.ID, historyID, kind, actorID, first, second); err != nil {
+		for _, notification := range notifications {
+			if !notification.changed {
+				continue
+			}
+			if _, err := tx.Exec(ctx, stmtInsertTaskNotifications, projectID, task.ID, historyID,
+				string(notification.kind), actorID, notification.first, notification.second); err != nil {
 				return fmt.Errorf("record task notification: %w", err)
 			}
 		}
@@ -259,12 +253,36 @@ func (t *PostgresTaskRepository) Remove(ctx context.Context, taskID, actorID, pr
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := t.pool.Exec(ctx, stmtRemoveTask, taskID, projectID, actorID)
+	tx, err := t.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin task delete: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var title string
+	if err := tx.QueryRow(ctx, stmtLockTaskForDelete, taskID, actorID, projectID).Scan(&title); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return repository.ErrTaskNotFound
+		}
+		return fmt.Errorf("lock task for delete: %w", err)
+	}
+	deletedValues, err := json.Marshal(map[string]any{"deleted": true})
+	if err != nil {
+		return err
+	}
+	var historyID uuid.UUID
+	if err := tx.QueryRow(ctx, stmtTaskHistoryInsert,
+		taskID, projectID, actorID, "task.deleted", title, nil, string(deletedValues)).Scan(&historyID); err != nil {
+		return fmt.Errorf("record task deletion: %w", err)
+	}
+	commandTag, err := tx.Exec(ctx, stmtRemoveTask, taskID, projectID, actorID)
 	if err != nil {
 		return err
 	}
 	if commandTag.RowsAffected() == 0 {
 		return repository.ErrTaskNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit task delete: %w", err)
 	}
 	return nil
 }

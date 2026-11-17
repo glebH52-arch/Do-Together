@@ -86,6 +86,9 @@ func run() error {
 	projectRepository := postgres.NewPostgresProjectRepository(pool)
 	projectService := service.NewProjectService(projectRepository)
 	projectHandler := handler.NewProjectHandler(projectService)
+	activityRepository := postgres.NewPostgresProjectActivityRepository(pool)
+	activityService := service.NewProjectActivityService(activityRepository)
+	activityHandler := handler.NewProjectActivityHandler(activityService)
 	projectMemberRepository := postgres.NewPostgresProjectMemberRepository(pool)
 	projectMemberService := service.NewProjectMemberService(projectMemberRepository)
 	projectMemberHandler := handler.NewProjectMemberHandler(projectMemberService)
@@ -102,7 +105,7 @@ func run() error {
 	notificationService := service.NewNotificationService(notificationRepository)
 	notificationHandler := handler.NewNotificationHandler(notificationService)
 	healthHandler := handler.NewHealthHandler(pool, redisClient, 2*time.Second)
-	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware, projectMemberHandler, inviteHandler, taskHandler, commentHandler, notificationHandler, healthHandler)
+	router := handler.NewRouter(projectHandler, activityHandler, userHandler, authHandler, authMiddleware, projectMemberHandler, inviteHandler, taskHandler, commentHandler, notificationHandler, healthHandler)
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           router,
