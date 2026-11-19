@@ -24,17 +24,17 @@
 .active-filter-chips button { padding: 5px 9px; border: 1px solid var(--border); border-radius: 99px; background: var(--surface-2); color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
 .empty-filter-state { padding: 16px; border: 1px dashed var(--border); border-radius: var(--r); color: var(--muted); }
 .kanban-board { min-width: 0; margin-top: 20px; }
-.kanban-column { background: #eceeea; border-color: #d7dbd6; border-radius: 8px; min-height: 300px; }
-.kanban-column .column-heading { color: #414950; font-size: 13px; font-weight: 600; }
-.task-card { position: relative; border-radius: 8px; box-shadow: 0 1px 1px #1d252b08; }
+.kanban-column { background: var(--column-bg); border-color: var(--column-border); border-radius: 8px; min-height: 300px; }
+.kanban-column .column-heading { color: var(--column-heading); font-size: 13px; font-weight: 600; }
+.task-card { position: relative; border-radius: 8px; box-shadow: var(--card-shadow); }
 .task-card[draggable="true"] { cursor: grab; }
 .task-card[draggable="true"]:active { cursor: grabbing; }
 .task-open h4 { font-size: 14px; line-height: 1.35; padding-right: 24px; }
 .task-open p { font-size: 12px; }
 .task-card .chips { margin-top: 12px; }
 .task-card .chips span { border: 0; background: transparent; padding: 0; color: var(--muted); font-size: 11px; }
-.task-card .chips .priority.high { color: #334f82; }
-.task-card .chips .priority.critical { color: #8b3e52; }
+.task-card .chips .priority.high { color: var(--priority-high); }
+.task-card .chips .priority.critical { color: var(--priority-critical); }
 .task-card small { color: var(--muted); }
 .task-moving { opacity: .72; box-shadow: 0 0 0 2px color-mix(in srgb,var(--accent) 40%,transparent); }
 .task-saving { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb,var(--surface) 82%,transparent); border-radius: var(--r); font-weight: 700; color: var(--accent); }
@@ -69,6 +69,9 @@
 .team-drawer .member-controls select { width: auto; max-width: 100%; }
 .activity-list article { padding: 14px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
 .activity-list p { margin: 5px 0; }
+.activity-list .activity-task-link { display: inline; min-height: 0; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--accent); font: inherit; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.activity-list .activity-task-link:hover, .activity-list .activity-task-link:focus-visible { text-decoration: underline; }
+.activity-list .activity-changes { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .activity-list pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 8px; border-radius: 6px; }
 
 /* A fixed header and one bounded body replace the previous absolute-positioned columns. */

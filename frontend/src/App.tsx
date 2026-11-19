@@ -18,6 +18,25 @@ export function App() {
   const [invites,setInvites]=useState<Invite[]>([]), [notifications,setNotifications]=useState<Notification[]>([]), [inviteCount,setInviteCount]=useState(0), [notificationCount,setNotificationCount]=useState(0), [projectsRevision,setProjectsRevision]=useState(0);
   const [locale,setLocale]=useState<Locale>(()=>localStorage.getItem("dt-locale")==="en"?"en":"ru"), [theme,setTheme]=useState<Theme>(()=>(localStorage.getItem("dt-theme") as Theme)||"system");
   const popRef=useRef<HTMLDivElement>(null), triggerRef=useRef<HTMLButtonElement|null>(null); const t=useCopy(locale), c=chromeCopy[locale];
+  const panelRef=useRef<HTMLDivElement>(null), closeTimer=useRef<number|undefined>(undefined), keyboardPopover=useRef(false);
+  const cancelPopoverClose=()=>{window.clearTimeout(closeTimer.current);closeTimer.current=undefined};
+  const inPopoverRegion=(node:EventTarget|null)=>node instanceof Node&&(triggerRef.current?.contains(node)||panelRef.current?.contains(node));
+  function schedulePopoverClose() {
+    cancelPopoverClose();
+    if(popover!=="invites"&&popover!=="notifications")return;
+    const closing=popover;
+    closeTimer.current=window.setTimeout(()=>{
+      closeTimer.current=undefined;
+      if(keyboardPopover.current&&inPopoverRegion(document.activeElement))return;
+      setPopover(current=>current===closing?null:current);
+    },220);
+  }
+  function leavePopover(e:React.MouseEvent<HTMLElement>) {
+    if(e.currentTarget!==triggerRef.current&&e.currentTarget!==panelRef.current)return;
+    if(inPopoverRegion(e.relatedTarget))return;
+    schedulePopoverClose();
+  }
+  useEffect(()=>()=>cancelPopoverClose(),[popover]);
   const nav=(p:string)=>{history.pushState(null,"",p);setPath(p);setPopover(null)};
   useEffect(()=>subscribeSession(v=>{setTokens(v);if(!v)setUser(null)}),[]);
   useEffect(()=>{const f=()=>setPath(location.pathname);addEventListener("popstate",f);return()=>removeEventListener("popstate",f)},[]);
@@ -30,17 +49,17 @@ export function App() {
   async function submit(e:FormEvent){e.preventDefault();setBusy(true);setError(null);setNotice(false);try{if(mode==="register"){await api.register({username:username.trim(),email:email.trim(),password});setPassword("");setMode("verify");setNotice(true);return}if(mode==="verify"){if(!/^\d{6}$/.test(code))throw new Error("sixDigits");const x=await api.verify({email:email.trim(),code});setSession(x);setUser(await api.profile(x.access_token));nav("/projects");return}const x=await api.login({email:email.trim(),password});setSession(x);setUser(await api.profile(x.access_token));nav("/projects")}catch(e){setError(e)}finally{setBusy(false)}}
   async function decide(id:string,action:"accept"|"decline"){if(!tokens)return;setError(null);try{await api.decideInvite(tokens.access_token,id,action);await refreshChrome();setProjectsRevision(x=>x+1)}catch(e){setError(e)}}
   async function logout(){if(tokens)try{await request("/auth/logout",{body:{refresh_token:tokens.refresh_token}})}catch{}setSession(null);nav("/")}
-  function toggle(next:typeof popover,e:React.MouseEvent<HTMLButtonElement>){setError(null);triggerRef.current=e.currentTarget;setPopover(v=>v===next?null:next)}
+  function toggle(next:typeof popover,e:React.MouseEvent<HTMLButtonElement>){cancelPopoverClose();keyboardPopover.current=e.detail===0;setError(null);triggerRef.current=e.currentTarget;setPopover(v=>v===next?null:next)}
   if (location.pathname === "/preview/board-a") return <BoardPreview variant="a"/>;
   if (location.pathname === "/preview/board-b") return <BoardPreview variant="b"/>;
   if(loading)return <main className="auth-shell"><div className="auth-card">{c.restoring}</div></main>;
   if(user&&tokens){const taskMatch=new RegExp(`^/projects/(${uuid})/tasks/(${uuid})$`).exec(path),projectMatch=new RegExp(`^/projects/(${uuid})$`).exec(path);return <div className="app-shell">
     <header className="topbar"><button className="brand" onClick={()=>nav("/projects")}>Do Together</button><nav className="top-actions" ref={popRef}>
-      <button className="icon-control" aria-label={t.invites} aria-expanded={popover==="invites"} onClick={e=>toggle("invites",e)}><Inbox/>{inviteCount>0&&<b className="badge">{inviteCount}</b>}<span className="tooltip">{t.invites}</span></button>
-      <button className="icon-control" aria-label={t.notifications} aria-expanded={popover==="notifications"} onClick={e=>toggle("notifications",e)}><Bell/>{notificationCount>0&&<b className="badge">{notificationCount}</b>}<span className="tooltip">{t.notifications}</span></button>
+      <button className="icon-control" aria-label={t.invites} aria-expanded={popover==="invites"} onMouseEnter={()=>{if(popover==="invites")cancelPopoverClose()}} onMouseLeave={leavePopover} onKeyDown={()=>{keyboardPopover.current=true}} onClick={e=>toggle("invites",e)}><Inbox/>{inviteCount>0&&<b className="badge">{inviteCount}</b>}<span className="tooltip">{t.invites}</span></button>
+      <button className="icon-control" aria-label={t.notifications} aria-expanded={popover==="notifications"} onMouseEnter={()=>{if(popover==="notifications")cancelPopoverClose()}} onMouseLeave={leavePopover} onKeyDown={()=>{keyboardPopover.current=true}} onClick={e=>toggle("notifications",e)}><Bell/>{notificationCount>0&&<b className="badge">{notificationCount}</b>}<span className="tooltip">{t.notifications}</span></button>
       <button className="icon-control" aria-label={t.settings} aria-expanded={popover==="settings"} onClick={e=>toggle("settings",e)}><Settings/><span className="tooltip">{t.settings}</span></button>
       <button className="account-button" onClick={e=>toggle("settings",e)}><Avatar user={user}/><span>{user.display_name||user.username}</span></button>
-      {popover&&<div className="popover" role="dialog"><div className="popover-title"><strong>{popover==="invites"?t.invites:popover==="notifications"?t.notifications:t.settings}</strong><button className="icon-control small" aria-label={t.close} onClick={()=>setPopover(null)}><X/></button></div>
+      {popover&&<div className="popover" role="dialog" ref={panelRef} onMouseEnter={cancelPopoverClose} onMouseLeave={leavePopover} onKeyDownCapture={()=>{keyboardPopover.current=true}} onBlur={e=>{if(!inPopoverRegion(e.relatedTarget))schedulePopoverClose()}}><div className="popover-title"><strong>{popover==="invites"?t.invites:popover==="notifications"?t.notifications:t.settings}</strong><button className="icon-control small" aria-label={t.close} onClick={()=>setPopover(null)}><X/></button></div>
         {popover==="invites"&&(invites.length?invites.map(i=><article className="popover-item" key={i.id}><strong>{i.project_title}</strong><small>{i.inviter_name}</small><div className="row"><button onClick={()=>void decide(i.id,"accept")}>{t.accept}</button><button className="secondary" onClick={()=>void decide(i.id,"decline")}>{t.decline}</button></div></article>):<p className="empty-copy">{t.emptyInvites}</p>)}
         {popover==="notifications"&&(notifications.length?notifications.map(n=><button className="notification-item" key={n.id} onClick={()=>{if(!n.read_at)void api.readNotification(tokens.access_token,n.id).then(refreshChrome).catch(setError);if(n.task_id)nav(`/projects/${n.project_id}/tasks/${n.task_id}`)}}><span>{notificationText(n.kind,n.payload,locale)}</span><small>{fmt(n.created_at,locale)}</small></button>):<p className="empty-copy">{t.emptyNotifications}</p>)}
         {popover==="settings"&&<SettingsPanel user={user} token={tokens.access_token} locale={locale} setLocale={setLocale} theme={theme} setTheme={setTheme} onUser={setUser} onLogout={()=>void logout()}/>}

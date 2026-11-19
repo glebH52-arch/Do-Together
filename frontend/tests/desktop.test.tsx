@@ -38,20 +38,47 @@ beforeEach(()=>{
 afterEach(()=>{cleanup();setSession(null);vi.unstubAllGlobals();});
 const props={projectID,user,accessToken:'test',onBack:vi.fn(),onTask:vi.fn()};
 
-test('click popovers survive pointer leaving and close on outside click or Escape',async()=>{
+test('invites and notifications close after leaving but allow crossing into the panel',async()=>{
   sessionStorage.setItem(refreshKey,'test');render(<App/>);
   const click=userEvent.setup();
-  for(const label of ['Приглашения','Уведомления','Настройки']){
+  for(const label of ['Приглашения','Уведомления']){
     const trigger=await screen.findByRole('button',{name:label,exact:true});
     await click.click(trigger);
     const popover=screen.getByRole('dialog');
-    fireEvent.mouseLeave(trigger);fireEvent.mouseLeave(trigger.closest('nav')!);fireEvent.mouseLeave(popover);
-    await new Promise(resolve=>setTimeout(resolve,220));
+    fireEvent.mouseLeave(trigger);
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,80))});
+    fireEvent.mouseEnter(popover);
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,260))});
     expect(screen.getByRole('dialog')).toBe(popover);
-    await click.keyboard('{Escape}');expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.mouseLeave(popover);
+    expect(screen.getByRole('dialog')).toBe(popover);
+    await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+    await click.click(trigger);await click.keyboard('{Escape}');expect(screen.queryByRole('dialog')).toBeNull();
     await click.click(trigger);await click.click(screen.getByRole('heading',{name:'Мои проекты'}));
     expect(screen.queryByRole('dialog')).toBeNull();
   }
+});
+
+test('popover focus protects keyboard interaction and switching cancels leave timers',async()=>{
+  sessionStorage.setItem(refreshKey,'test');const view=render(<App/>);const click=userEvent.setup();
+  const invites=await screen.findByRole('button',{name:'Приглашения',exact:true});
+  invites.focus();await click.keyboard('{Enter}');
+  const popover=screen.getByRole('dialog');fireEvent.mouseLeave(invites);fireEvent.mouseLeave(popover);
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,260))});
+  expect(screen.getByRole('dialog')).toBe(popover);
+  screen.getByRole('button',{name:'Закрыть'}).focus();fireEvent.keyDown(popover,{key:'Tab'});fireEvent.mouseLeave(popover);
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,260))});
+  expect(screen.getByRole('dialog')).toBe(popover);
+  await click.keyboard('{Escape}');
+  await click.click(invites);fireEvent.mouseLeave(invites);
+  await click.click(screen.getByRole('button',{name:'Настройки',exact:true}));
+  const settings=screen.getByRole('dialog');fireEvent.mouseLeave(settings);
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,260))});
+  expect(screen.getByRole('dialog')).toBe(settings);
+  await click.keyboard('{Escape}');
+  await click.click(invites);fireEvent.mouseLeave(invites);view.unmount();
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,260))});
+  expect(screen.queryByRole('dialog')).toBeNull();
 });
 
 test('failed move rolls back only its card, denies invalid drop locally, and success clears error',async()=>{

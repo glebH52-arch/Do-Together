@@ -256,3 +256,8 @@ export const activityCopy = {
     yes:'Yes',no:'No',changed:'Changed',details:'Details',
   },
 } as const;
+
+export const activityDetailCopy = {
+  ru: {openTask:'Открыть задачу',taskUnavailable:'Задача удалена или больше недоступна.',descriptionChanged:'Описание изменено',assigneeChanged:'Исполнитель изменён',member:'Участник',yes:'Да',no:'Нет'},
+  en: {openTask:'Open task',taskUnavailable:'This task was deleted or is no longer accessible.',descriptionChanged:'Description changed',assigneeChanged:'Assignee changed',member:'Member',yes:'Yes',no:'No'},
+} as const;

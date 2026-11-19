@@ -28,6 +28,8 @@ import {
 import { ProjectMembers } from "./ProjectMembers";
 import { boardCopy, boardErrorText, activityCopy, roleLabel, fmt as formatDate, statusLabel, type Locale, type BoardErrorKey } from "./i18n";
 import { ActionMenu, useModalSurface } from "./TaskSurface";
+import { activityDetails, activityTaskID } from "./activity-details";
+import { activityDetailCopy } from "./i18n";
 import { canMoveTask, mergeUniqueByID, moveTaskLocally } from "./project-detail-model";
 const statuses: TaskStatus[] = ["todo", "in_progress", "review", "done"];
 const types: TaskType[] = ["task", "bug", "feature", "research"];
@@ -122,6 +124,10 @@ export function ProjectDetail({
     [filtersOpen,setFiltersOpen]=useState(false),
     [activity,setActivity]=useState<Activity[]>([]),
     [activityCursor,setActivityCursor]=useState<string|null>(null);
+  const [openingActivityTask,setOpeningActivityTask]=useState<string|null>(null);
+  const [unavailableActivityTasks,setUnavailableActivityTasks]=useState<Set<string>>(new Set());
+  const [activityTaskError,setActivityTaskError]=useState<string|null>(null);
+  const activityNavigation=useRef(0);
   const movingRef=useRef(new Set<UUID>());
   const requestSequence=useRef(0);
   const taskSequence=useRef(0);
@@ -223,11 +229,29 @@ export function ProjectDetail({
     setDrag(null);
     if (task) void move(task, next);
   }
-  async function openActivity(){setTeamOpen(false);setActivityOpen(true);setActivityLoading(true);setActivityError(null);try{const p=await api.activity(accessToken,projectID);setActivity(p.items);setActivityCursor(p.next_cursor)}catch(cause){setActivityError({cause,fallback:'loadFailed'})}finally{setActivityLoading(false)}}
+  async function openActivity(){activityNavigation.current++;setOpeningActivityTask(null);setActivityTaskError(null);setTeamOpen(false);setActivityOpen(true);setActivityLoading(true);setActivityError(null);try{const p=await api.activity(accessToken,projectID);setActivity(p.items);setActivityCursor(p.next_cursor)}catch(cause){setActivityError({cause,fallback:'loadFailed'})}finally{setActivityLoading(false)}}
   async function moreActivity(){if(!activityCursor||activityLoading)return;setActivityLoading(true);setActivityError(null);try{const p=await api.activity(accessToken,projectID,activityCursor);setActivity(v=>mergeUniqueByID(v,p.items));setActivityCursor(p.next_cursor)}catch(cause){setActivityError({cause,fallback:'loadFailed'})}finally{setActivityLoading(false)}}
+  const deletedActivityTasks=new Set([...unavailableActivityTasks,...activity.filter(item=>item.object.type==='task'&&(item.object.deleted||item.type==='task.deleted')).map(item=>item.object.id)]);
+  async function openActivityTask(event:Activity){
+    const id=activityTaskID(event,deletedActivityTasks);
+    if(!id||openingActivityTask)return;
+    const sequence=++activityNavigation.current;setOpeningActivityTask(id);setActivityTaskError(null);
+    try{
+      const task=await api.task(accessToken,projectID,id);
+      if(sequence!==activityNavigation.current)return;
+      // The entry disappears with its drawer; return focus to the persistent history trigger.
+      taskTrigger.current=activityTrigger.current;
+      openTask(task);onTask(task.id);
+    }catch(cause){
+      if(sequence!==activityNavigation.current)return;
+      const status=typeof cause==='object'&&cause&&'status' in cause?Number(cause.status):0;
+      if(status===404||status===403){setUnavailableActivityTasks(current=>new Set(current).add(id));setActivityTaskError(id);}
+      else setActivityError({cause,fallback:'loadFailed'});
+    }finally{if(sequence===activityNavigation.current)setOpeningActivityTask(null);}
+  }
   const closeTask=()=>{taskSequence.current++;setCreate(false);setSelected(null);window.history.replaceState(null,"",`/projects/${projectID}`);requestAnimationFrame(()=>taskTrigger.current?.focus())};
-  const closeTeam=()=>{setTeamOpen(false);requestAnimationFrame(()=>teamTrigger.current?.focus())};
-  const closeActivity=()=>{setActivityOpen(false);requestAnimationFrame(()=>activityTrigger.current?.focus())};
+  const closeTeam=()=>{activityNavigation.current++;setTeamOpen(false);requestAnimationFrame(()=>teamTrigger.current?.focus())};
+  const closeActivity=()=>{activityNavigation.current++;setActivityOpen(false);requestAnimationFrame(()=>activityTrigger.current?.focus())};
 
   return (
     <>
@@ -397,7 +421,20 @@ export function ProjectDetail({
           </button>
         </div>
       </main>
-      {activityOpen&&<Drawer title={copy.projectHistory} closeLabel={copy.close} onClose={closeActivity} className="team-drawer activity-panel"><div className="activity-list">{activityError&&<p className="error" role="alert">{boardErrorText(activityError.cause,activityError.fallback,locale)} <button onClick={()=>void openActivity()}>{copy.retry}</button></p>}{activity.map(a=><article key={a.id}><time>{fmt(a.occurred_at)}</time><p><strong>{a.actor.name}</strong> {activityText(a,locale)}</p>{Object.keys(a.data.new??{}).length>1&&<details><summary>{copy.changes}</summary><p>{historyText({id:a.id,task_id:a.object.id,actor_id:a.actor.id,actor_name:a.actor.name,action:a.type,created_at:a.occurred_at,old_values:a.data.old,new_values:a.data.new},locale)}</p></details>}</article>)}{activityLoading&&<p role="status">{copy.loading}</p>}{!activityLoading&&!activityError&&activity.length===0&&<p>{copy.emptyActivity}</p>}{activityCursor&&<button className="secondary" disabled={activityLoading} onClick={()=>void moreActivity()}>{copy.loadMore}</button>}</div></Drawer>}
+      {activityOpen&&<Drawer title={copy.projectHistory} closeLabel={copy.close} onClose={closeActivity} className="team-drawer activity-panel"><div className="activity-list">
+        {activityError&&<p className="error" role="alert">{boardErrorText(activityError.cause,activityError.fallback,locale)} <button onClick={()=>void openActivity()}>{copy.retry}</button></p>}
+        {activity.map(event=>{
+          const target=activityTaskID(event,deletedActivityTasks),details=activityDetails(event,locale,members);
+          const failed=activityTaskError!==null&&(event.object.id===activityTaskError||event.data.new?.task_id===activityTaskError||event.data.old?.task_id===activityTaskError);
+          return <article key={event.id}><time>{fmt(event.occurred_at)}</time>
+            {target?<button type="button" className="activity-task-link" disabled={openingActivityTask!==null} onClick={()=>void openActivityTask(event)} aria-label={`${event.actor.name} ${activityText(event,locale)} — ${activityDetailCopy[locale].openTask}`}><strong>{event.actor.name}</strong> {activityText(event,locale)}</button>:<p><strong>{event.actor.name}</strong> {activityText(event,locale)}</p>}
+            {details.length>0&&<ul className="activity-changes">{details.map((line,index)=><li key={index}>{line}</li>)}</ul>}
+            {failed&&<p className="error" role="alert">{activityDetailCopy[locale].taskUnavailable}</p>}
+          </article>;
+        })}
+        {activityLoading&&<p role="status">{copy.loading}</p>}{!activityLoading&&!activityError&&activity.length===0&&<p>{copy.emptyActivity}</p>}{activityCursor&&<button className="secondary" disabled={activityLoading} onClick={()=>void moreActivity()}>{copy.loadMore}</button>}
+      </div></Drawer>}
+
       {teamOpen&&<Drawer title={copy.team} closeLabel={copy.close} onClose={closeTeam} className="team-drawer"><div className="team-drawer-content"><ProjectMembers projectID={projectID} user={user} accessToken={accessToken} onMembers={setMembers} locale={locale}/></div></Drawer>}
       {(create || selected) && (
         <TaskDialog
