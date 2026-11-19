@@ -33,7 +33,7 @@ test("Escape closes the topmost private panel", () => {
 test("task form retains controlled values on error and guards duplicate submit", async () => {
   const source=await readFile(new URL("../src/ProjectDetail.tsx",import.meta.url),"utf8");
   assert.match(source,/if\(submitting\.current\)return/);
-  assert.match(source,/Введённые данные сохранены/);
+  assert.match(source,/fallback:'saveFailed'/);
   assert.doesNotMatch(source,/prompt\(/);
 });
 

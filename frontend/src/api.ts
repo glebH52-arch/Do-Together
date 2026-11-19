@@ -1,3 +1,14 @@
+// Use the same public gateway for API calls and backend-hosted media.
+export const apiBase = (import.meta.env?.VITE_API_BASE_URL || "/api").replace(/\/$/, "");
+export function resolveAvatarURL(value: string | null | undefined, base = apiBase): string | null {
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("//") || /^[a-z][a-z\d+.-]*:/i.test(value)) return null;
+  const normalizedBase = base.replace(/\/$/, "");
+  if (value === normalizedBase || value.startsWith(normalizedBase + "/")) return value;
+  return normalizedBase + "/" + value.replace(/^\/+/, "");
+}
+
 export type UUID = string;
 export type Tokens = {
   access_token: string;
@@ -172,7 +183,7 @@ async function refresh() {
     const rt = session?.refresh_token ?? sessionStorage.getItem(refreshKey);
     if (!rt) throw new ApiError(fallback[401], 401);
     const own = version;
-    refreshing = fetch("/api/auth/refresh", {
+    refreshing = fetch(apiBase + "/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: rt }),
@@ -208,7 +219,7 @@ export async function request<T>(
   Object.entries(o.query ?? {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
   });
-  const url = "/api" + path + (q.size ? "?" + q : "");
+  const url = apiBase + path + (q.size ? "?" + q : "");
   const guarded = !!o.token && !path.startsWith("/auth/");
   let token = guarded ? (session?.access_token ?? o.token) : o.token;
   const send = (t?: string) =>
@@ -240,7 +251,7 @@ export async function request<T>(
   return data as T;
 }
 export async function upload<T>(path: string, token: string, form: FormData) {
-  let r = await fetch("/api" + path, { method: "PUT", headers: { Authorization: `Bearer ${session?.access_token ?? token}` }, body: form });
+  let r = await fetch(apiBase + path, { method: "PUT", headers: { Authorization: `Bearer ${session?.access_token ?? token}` }, body: form });
   if (!r.ok) throw await responseError(r);
   return (await r.json()) as T;
 }

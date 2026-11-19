@@ -1,13 +1,13 @@
 import {
-  Fragment,
   useEffect,
   useMemo,
   useRef,
   useState,
   type DragEvent,
   type FormEvent,
+  type ReactNode,
 } from "react";
-import { History as HistoryIcon, MoreHorizontal, Plus, X } from "lucide-react";
+import { Filter, History as HistoryIcon, Plus, Search, Users, X } from "lucide-react";
 import {
   ApiError,
   api,
@@ -26,33 +26,14 @@ import {
   type UUID,
 } from "./api";
 import { ProjectMembers } from "./ProjectMembers";
-import type { Locale } from "./i18n";
-import "./workspace-overrides.css";
-import "./status-menu.css";
-import { canMoveTask, escapeTarget, friendlyActionError, mergeUniqueByID, moveTaskLocally } from "./project-detail-model";
-const statuses: TaskStatus[] = ["todo", "in_progress", "review", "done"],
-  statusName = {
-    todo: "К выполнению",
-    in_progress: "В работе",
-    review: "На проверке",
-    done: "Готово",
-  },
-  types: TaskType[] = ["task", "bug", "feature", "research"],
-  typeName = {
-    task: "Задача",
-    bug: "Ошибка",
-    feature: "Функция",
-    research: "Исследование",
-  },
-  priorities: TaskPriority[] = ["low", "medium", "high", "critical"],
-  priorityName = {
-    low: "Низкий",
-    medium: "Средний",
-    high: "Высокий",
-    critical: "Критический",
-  };
-const fmt = (v?: string | null) =>
-  v ? new Date(v).toLocaleString("ru-RU") : "—";
+import { boardCopy, boardErrorText, activityCopy, roleLabel, fmt as formatDate, statusLabel, type Locale, type BoardErrorKey } from "./i18n";
+import { ActionMenu, useModalSurface } from "./TaskSurface";
+import { canMoveTask, mergeUniqueByID, moveTaskLocally } from "./project-detail-model";
+const statuses: TaskStatus[] = ["todo", "in_progress", "review", "done"];
+const types: TaskType[] = ["task", "bug", "feature", "research"];
+const priorities: TaskPriority[] = ["low", "medium", "high", "critical"];
+type UIError = {cause:unknown;fallback:BoardErrorKey}|null;
+const names = (locale:Locale) => Object.fromEntries(statuses.map(status=>[status,statusLabel(status,locale)])) as Record<TaskStatus,string>;
 const page = <T,>(v: Paged<T> | T[]): Paged<T> =>
   Array.isArray(v)
     ? { items: v, total: v.length, limit: v.length, offset: 0 }
@@ -107,6 +88,8 @@ export function ProjectDetail({
   onTask: (id: UUID) => void;
   locale: Locale;
 }) {
+  const copy=boardCopy[locale],statusName=names(locale),typeName=copy.types,priorityName=copy.priorities;
+  const fmt=(value?:string|null)=>formatDate(value,locale);
   const [project, setProject] = useState<Project | null>(null),
     [members, setMembers] = useState<ProjectMember[]>([]),
     [tasks, setTasks] = useState<Task[]>([]),
@@ -114,9 +97,10 @@ export function ProjectDetail({
     [selected, setSelected] = useState<Task | null>(null),
     [edit, setEdit] = useState(false),
     [create, setCreate] = useState(false),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [conflict, setConflict] = useState(false),
+    [error, setError] = useState<UIError>(null),
+    [loading,setLoading]=useState(true),
+    [activityError,setActivityError]=useState<UIError>(null),
+    [activityLoading,setActivityLoading]=useState(false),
     [query, setQuery] = useState(""),
     [status, setStatus] = useState(""),
     [type, setType] = useState(""),
@@ -132,11 +116,15 @@ export function ProjectDetail({
     [tab, setTab] = useState<"details" | "comments" | "history">("details"),
     [drag, setDrag] = useState<UUID | null>(null),
     [moving,setMoving]=useState<Set<UUID>>(new Set()),
+    [moveErrors,setMoveErrors]=useState<Record<UUID,'moveDenied'|'moveFailed'|'moveConflict'>>({}),
     [activityOpen,setActivityOpen]=useState(false),
     [teamOpen,setTeamOpen]=useState(false),
+    [filtersOpen,setFiltersOpen]=useState(false),
     [activity,setActivity]=useState<Activity[]>([]),
     [activityCursor,setActivityCursor]=useState<string|null>(null);
+  const movingRef=useRef(new Set<UUID>());
   const requestSequence=useRef(0);
+  const taskSequence=useRef(0);
   const loadController=useRef<AbortController|null>(null);
   const taskTrigger=useRef<HTMLElement|null>(null);
   const teamTrigger=useRef<HTMLButtonElement|null>(null);
@@ -163,7 +151,7 @@ export function ProjectDetail({
     loadController.current?.abort();
     const controller=new AbortController();
     loadController.current=controller;
-    setError("");
+    setError(null);setLoading(true);
     try {
       const [p, r] = await Promise.all([
         request<Project>(`/projects/${projectID}`, { token: accessToken, signal: controller.signal }),
@@ -176,8 +164,8 @@ export function ProjectDetail({
       setTotal(pg.total);
     } catch (e) {
       if(e instanceof DOMException&&e.name==="AbortError")return;
-      setError(e instanceof Error ? e.message : "Ошибка загрузки");
-    }
+      if(sequence===requestSequence.current)setError({cause:e,fallback:'loadFailed'});
+    } finally {if(sequence===requestSequence.current)setLoading(false)}
   }
   useEffect(() => {
     const t = setTimeout(() => void load(), query ? 250 : 0);
@@ -186,47 +174,47 @@ export function ProjectDetail({
   useEffect(()=>()=>loadController.current?.abort(),[]);
   useEffect(()=>{
     const controller=new AbortController();
-    api.members(accessToken,projectID,controller.signal).then(setMembers).catch((e)=>{if(!(e instanceof DOMException&&e.name==="AbortError"))setError(friendlyActionError(e,"Не удалось загрузить участников."))});
+    api.members(accessToken,projectID,controller.signal).then(setMembers).catch((e)=>{if(!(e instanceof DOMException&&e.name==="AbortError"))setError({cause:e,fallback:'membersFailed'})});
     return()=>controller.abort();
-  },[projectID,accessToken]);
+  },[projectID,accessToken,user.avatar_url,user.display_name]);
   useEffect(() => {
-    if (initialTaskID)
+    if (initialTaskID && selected?.id!==initialTaskID)
       void api
         .task(accessToken, projectID, initialTaskID)
         .then(openTask)
-        .catch((e) => setError(e.message));
+        .catch((e) => setError({cause:e,fallback:'loadFailed'}));
   }, [initialTaskID]);
   function openTask(t: Task) {
+    const sequence=++taskSequence.current;
+    setTeamOpen(false);setActivityOpen(false);
     setSelected(t);
     setEdit(false);
     setTab("details");
-    setConflict(false);
+    setComments([]);setHistory([]);
     void Promise.all([
       api.comments(accessToken, projectID, t.id),
       api.history(accessToken, projectID, t.id),
     ])
       .then(([c, h]) => {
+        if(sequence!==taskSequence.current)return;
         setComments(page(c).items);
         setHistory(page(h).items);
       })
-      .catch(() => {});
+      .catch(cause=>{if(sequence===taskSequence.current)setError({cause,fallback:'loadFailed'})});
   }
   async function move(task: Task, next: TaskStatus) {
-    if (task.status === next || moving.has(task.id)) return;
-    if (!canMoveTask(task,next)) { setError("Этот переход недоступен для задачи."); return; }
-    let before:Task[]=[];
-    setTasks((current) => { before=current; return moveTaskLocally(current,task.id,next); });
-    setMoving(v=>new Set(v).add(task.id));
+    if (task.status === next || movingRef.current.has(task.id)) return;
+    if (!canMoveTask(task,next)) {setMoveErrors(v=>({...v,[task.id]:'moveDenied'}));return;}
+    movingRef.current.add(task.id);setMoving(new Set(movingRef.current));
+    setTasks(current=>moveTaskLocally(current,task.id,next));
     try {
-      await api.updateTask(accessToken, projectID, task.id, { status: next });
+      await api.updateTask(accessToken,projectID,task.id,{status:next});
+      setMoveErrors(current=>{const nextErrors={...current};delete nextErrors[task.id];return nextErrors;});
       await load();
-    } catch (e) {
-      setTasks(before);
-      if (e instanceof ApiError && e.status === 409) setConflict(true);
-      setError(friendlyActionError(e,"Не удалось изменить статус. Карточка возвращена на прежнее место."));
-    } finally {
-      setMoving(v=>{const n=new Set(v);n.delete(task.id);return n});
-    }
+    } catch(cause) {
+      setTasks(current=>current.map(item=>item.id===task.id?task:item));
+      setMoveErrors(current=>({...current,[task.id]:cause instanceof ApiError&&cause.status===409?'moveConflict':'moveFailed'}));
+    } finally {movingRef.current.delete(task.id);setMoving(new Set(movingRef.current));}
   }
   function drop(e: DragEvent, next: TaskStatus) {
     e.preventDefault();
@@ -235,54 +223,32 @@ export function ProjectDetail({
     setDrag(null);
     if (task) void move(task, next);
   }
-  async function openActivity(){setActivityOpen(true);if(activity.length)return;const p=await api.activity(accessToken,projectID);setActivity(p.items);setActivityCursor(p.next_cursor)}
-  async function moreActivity(){if(!activityCursor)return;const p=await api.activity(accessToken,projectID,activityCursor);setActivity(v=>mergeUniqueByID(v,p.items));setActivityCursor(p.next_cursor)}
-  const closeTask=()=>{setCreate(false);setSelected(null);window.history.replaceState(null,"",`/projects/${projectID}`);requestAnimationFrame(()=>taskTrigger.current?.focus())};
+  async function openActivity(){setTeamOpen(false);setActivityOpen(true);setActivityLoading(true);setActivityError(null);try{const p=await api.activity(accessToken,projectID);setActivity(p.items);setActivityCursor(p.next_cursor)}catch(cause){setActivityError({cause,fallback:'loadFailed'})}finally{setActivityLoading(false)}}
+  async function moreActivity(){if(!activityCursor||activityLoading)return;setActivityLoading(true);setActivityError(null);try{const p=await api.activity(accessToken,projectID,activityCursor);setActivity(v=>mergeUniqueByID(v,p.items));setActivityCursor(p.next_cursor)}catch(cause){setActivityError({cause,fallback:'loadFailed'})}finally{setActivityLoading(false)}}
+  const closeTask=()=>{taskSequence.current++;setCreate(false);setSelected(null);window.history.replaceState(null,"",`/projects/${projectID}`);requestAnimationFrame(()=>taskTrigger.current?.focus())};
   const closeTeam=()=>{setTeamOpen(false);requestAnimationFrame(()=>teamTrigger.current?.focus())};
   const closeActivity=()=>{setActivityOpen(false);requestAnimationFrame(()=>activityTrigger.current?.focus())};
-  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key!=="Escape")return;const target=escapeTarget({task:!!selected||create,team:teamOpen,activity:activityOpen});if(target==="task")closeTask();else if(target==="team")closeTeam();else if(target==="activity")closeActivity()};document.addEventListener("keydown",key);return()=>document.removeEventListener("keydown",key)},[selected,create,teamOpen,activityOpen]);
+
   return (
     <>
       <main className="workspace-main">
         <button className="back-link" onClick={onBack}>
-          ← Все проекты
+          ← {copy.allProjects}
         </button>
         {error && (
           <p className="error" role="alert">
-            {error}
+            {boardErrorText(error.cause,error.fallback,locale)}
           </p>
         )}
-        {conflict && (
-          <div className="notice">
-            Доска изменилась в другой сессии.{" "}
-            <button
-              className="linklike"
-              onClick={() => {
-                setConflict(false);
-                void load();
-              }}
-            >
-              Получить актуальное состояние
-            </button>
-          </div>
-        )}
-        {project && <div className="project-heading"><section className="project-intro"><h1>{project.title}</h1><p>{project.goal}</p></section><div className="row"><button ref={activityTrigger} className="secondary" onClick={()=>void openActivity()}><HistoryIcon/> {locale==="ru"?"История":"History"}</button><button onClick={(e) => {taskTrigger.current=e.currentTarget;setCreate(true)}}><Plus/> {locale==="ru"?"Добавить задачу":"Add task"}</button></div></div>}
-        <section className="filters" aria-label="Поиск и фильтры">
-          <input
-            aria-label="Поиск"
-            placeholder="Поиск по названию и описанию"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOffset(0);
-            }}
-          />
+        {project && <div className="project-heading"><section className="project-intro"><div className="project-crumbs">{copy.projects} <span>/</span> {project.title}</div><h1>{project.title}</h1><p>{project.goal}</p></section><div className="project-actions"><button ref={teamTrigger} className="secondary" onClick={()=>{setActivityOpen(false);setTeamOpen(true)}}><Users/> {copy.team}</button><button ref={activityTrigger} className="secondary" aria-label={copy.projectHistory} title={copy.projectHistory} onClick={()=>void openActivity()}><HistoryIcon/></button><button onClick={(e) => {taskTrigger.current=e.currentTarget;setCreate(true)}}><Plus/> {copy.task}</button></div></div>}
+        <div className="board-toolbar"><label className="board-search"><Search/><input aria-label={copy.search} placeholder={copy.searchTasks} value={query} onChange={e=>{setQuery(e.target.value);setOffset(0)}}/></label><button className="secondary" aria-expanded={filtersOpen} onClick={()=>setFiltersOpen(v=>!v)}><Filter/> {copy.filters}</button></div>
+        {filtersOpen&&<section className="filters" aria-label={copy.searchFilters}>
           <select
-            aria-label="Статус"
+            aria-label={copy.status}
             value={status}
             onChange={(e) => setStatus(e.target.value)}
           >
-            <option value="">Все статусы</option>
+            <option value="">{copy.allStatuses}</option>
             {statuses.map((v) => (
               <option key={v} value={v}>
                 {statusName[v]}
@@ -290,31 +256,31 @@ export function ProjectDetail({
             ))}
           </select>
           <select
-            aria-label="Тип"
+            aria-label={copy.type}
             value={type}
             onChange={(e) => setType(e.target.value)}
           >
-            <option value="">Все типы</option>
+            <option value="">{copy.allTypes}</option>
             {types.map((v) => (
-              <option key={v}>{v}</option>
+              <option key={v} value={v}>{typeName[v]}</option>
             ))}
           </select>
           <select
-            aria-label="Приоритет"
+            aria-label={copy.priority}
             value={priority}
             onChange={(e) => setPriority(e.target.value)}
           >
-            <option value="">Все приоритеты</option>
+            <option value="">{copy.allPriorities}</option>
             {priorities.map((v) => (
-              <option key={v}>{priorityName[v]}</option>
+              <option key={v} value={v}>{priorityName[v]}</option>
             ))}
           </select>
           <select
-            aria-label="Исполнитель"
+            aria-label={copy.assignee}
             value={assignee}
             onChange={(e) => setAssignee(e.target.value)}
           >
-            <option value="">Все исполнители</option>
+            <option value="">{copy.allAssignees}</option>
             {members.map((v) => (
               <option key={v.user_id} value={v.user_id}>
                 {v.username}
@@ -322,22 +288,22 @@ export function ProjectDetail({
             ))}
           </select>
           <input
-            aria-label="Срок с"
+            aria-label={copy.dueFrom}
             type="date"
             value={dueFrom}
             onChange={(e) => {setDueFrom(e.target.value);setOffset(0)}}
           />
-          <input aria-label="Срок по" type="date" value={dueTo} onChange={e=>{setDueTo(e.target.value);setOffset(0)}}/>
-          <button className="secondary" onClick={()=>{setQuery("");setStatus("");setType("");setPriority("");setAssignee("");setDueFrom("");setDueTo("");setOffset(0)}}>{locale==="ru"?"Сбросить":"Reset"}</button>
+          <input aria-label={copy.dueTo} type="date" value={dueTo} onChange={e=>{setDueTo(e.target.value);setOffset(0)}}/>
+          <button className="secondary" onClick={()=>{setQuery("");setStatus("");setType("");setPriority("");setAssignee("");setDueFrom("");setDueTo("");setOffset(0)}}>{copy.reset}</button>
           <select
-            aria-label="Сортировка"
+            aria-label={copy.sorting}
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
-            <option value="created_at">По созданию</option>
-            <option value="updated_at">По обновлению</option>
-            <option value="due_at">По сроку</option>
-            <option value="priority">По приоритету</option>
+            <option value="created_at">{copy.createdSort}</option>
+            <option value="updated_at">{copy.updatedSort}</option>
+            <option value="due_at">{copy.dueSort}</option>
+            <option value="priority">{copy.prioritySort}</option>
           </select>
           <button
             className="secondary"
@@ -345,18 +311,19 @@ export function ProjectDetail({
           >
             {direction === "asc" ? "↑" : "↓"}
           </button>
-        </section>
-        {(query||status||type||priority||assignee||dueFrom||dueTo)&&<div className="active-filter-chips" aria-label="Активные фильтры">
-          {query&&<button onClick={()=>setQuery("")}>Поиск: {query} ×</button>}
-          {status&&<button onClick={()=>setStatus("")}>Статус: {statusName[status as TaskStatus]} ×</button>}
-          {type&&<button onClick={()=>setType("")}>Тип: {typeName[type as TaskType]} ×</button>}
-          {priority&&<button onClick={()=>setPriority("")}>Приоритет: {priorityName[priority as TaskPriority]} ×</button>}
-          {assignee&&<button onClick={()=>setAssignee("")}>Исполнитель: {members.find(m=>m.user_id===assignee)?.display_name||members.find(m=>m.user_id===assignee)?.username||"выбран"} ×</button>}
-          {dueFrom&&<button onClick={()=>setDueFrom("")}>Срок от: {dueFrom} ×</button>}
-          {dueTo&&<button onClick={()=>setDueTo("")}>Срок до: {dueTo} ×</button>}
+        </section>}
+        {(query||status||type||priority||assignee||dueFrom||dueTo)&&<div className="active-filter-chips" aria-label={copy.activeFilters}>
+          {query&&<button onClick={()=>setQuery("")}>{copy.search}: {query} ×</button>}
+          {status&&<button onClick={()=>setStatus("")}>{copy.status}: {statusName[status as TaskStatus]} ×</button>}
+          {type&&<button onClick={()=>setType("")}>{copy.type}: {typeName[type as TaskType]} ×</button>}
+          {priority&&<button onClick={()=>setPriority("")}>{copy.priority}: {priorityName[priority as TaskPriority]} ×</button>}
+          {assignee&&<button onClick={()=>setAssignee("")}>{copy.assignee}: {members.find(m=>m.user_id===assignee)?.display_name||members.find(m=>m.user_id===assignee)?.username||"—"} ×</button>}
+          {dueFrom&&<button onClick={()=>setDueFrom("")}>{copy.dueFrom}: {dueFrom} ×</button>}
+          {dueTo&&<button onClick={()=>setDueTo("")}>{copy.dueTo}: {dueTo} ×</button>}
         </div>}
-        {total===0&&(query||status||type||priority||assignee||dueFrom||dueTo)&&<p className="empty-filter-state">По применённым фильтрам задач не найдено. Уберите один из фильтров или сбросьте их все.</p>}
-        <div className="kanban-board">
+        {total===0&&(query||status||type||priority||assignee||dueFrom||dueTo)&&<p className="empty-filter-state">{copy.emptyFilters}</p>}
+        {loading&&<p role="status">{copy.loading}</p>}
+        <div className="kanban-board" aria-busy={loading}>
           {statuses.map((col) => (
             <section
               className={`kanban-column ${drag ? "dragging" : ""} ${drag&&tasks.find(t=>t.id===drag)?.allowed_transitions.includes(col)?"drop-allowed":""}`}
@@ -372,7 +339,10 @@ export function ProjectDetail({
                 {tasks
                   .filter((v) => v.status === col)
                   .map((t) => (
-                    <article
+                    <article data-task-id={t.id}
+                      draggable={!moving.has(t.id)}
+                      onDragStart={e=>{setDrag(t.id);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",t.id)}}
+                      onDragEnd={()=>setDrag(null)}
                       className={`task-card ${moving.has(t.id)?"task-moving":""}`}
                       key={t.id}
                     >
@@ -393,12 +363,12 @@ export function ProjectDetail({
                           </span>
                         </div>
                         <small>
-                          {t.assignee_name ?? "Не назначена"} ·{" "}
-                          {t.due_at ? fmt(t.due_at) : "Без срока"}
+                          {t.assignee_name ?? copy.unassigned} ·{" "}
+                          {t.due_at ? fmt(t.due_at) : copy.noDue}
                         </small>
                       </button>
-                      <span className="drag-handle" draggable={!moving.has(t.id)} aria-label={`Перетащить ${t.title}`} title="Перетащить задачу" onDragStart={(e)=>{setDrag(t.id);e.dataTransfer.setData("text/plain",t.id)}} onDragEnd={()=>setDrag(null)}>⋮⋮</span>
-                      <details className="status-menu"><summary aria-label={`Изменить статус ${t.title}`}><MoreHorizontal/></summary><div>{t.allowed_transitions.length===0?<span>Нет доступных переходов</span>:t.allowed_transitions.map(s=><button className="text-button" key={s} onClick={()=>void move(t,s)}>В {statusName[s]}</button>)}</div></details>
+                      <small className="task-move-error" role="alert" aria-live="assertive">{moveErrors[t.id]?boardCopy[locale][moveErrors[t.id]]:null}</small>{moving.has(t.id)&&<span className="task-saving" role="status">{boardCopy[locale].saving}</span>}
+                      <div className="status-menu"><ActionMenu label={`${copy.changeStatus} ${t.title}`}>{close=><>{t.allowed_transitions.length===0?<span>{copy.noTransitions}</span>:t.allowed_transitions.map(next=><button role="menuitem" disabled={moving.has(t.id)} key={next} onClick={()=>{close();void move(t,next)}}>{copy.moveTo} {statusName[next]}</button>)}</>}</ActionMenu></div>
                     </article>
                   ))}
               </div>
@@ -411,27 +381,28 @@ export function ProjectDetail({
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - limit))}
           >
-            Назад
+            {copy.previous}
           </button>
           <span>
             {total
-              ? `${offset + 1}–${Math.min(offset + limit, total)} из ${total}`
-              : "0 результатов"}
+              ? `${offset + 1}–${Math.min(offset + limit, total)} ${copy.of} ${total}`
+              : copy.noResults}
           </span>
           <button
             className="secondary"
             disabled={offset + limit >= total}
             onClick={() => setOffset(offset + limit)}
           >
-            Далее
+            {copy.next}
           </button>
         </div>
-        <div className="team-trigger-row"><button ref={teamTrigger} className="secondary" onClick={()=>setTeamOpen(true)}>Команда</button></div>
       </main>
-      {activityOpen&&<div className="team-overlay" onClick={closeActivity}><aside className="activity-panel" role="dialog" aria-modal="true" aria-label="История проекта" onClick={e=>e.stopPropagation()}><div className="panel-heading"><h2>{locale==="ru"?"История проекта":"Project history"}</h2><button className="icon-control" aria-label="Закрыть" onClick={closeActivity}><X/></button></div><div className="activity-list">{activity.map(a=><article key={a.id}><time>{new Date(a.occurred_at).toLocaleString(locale==="ru"?"ru-RU":"en-US")}</time><p><strong>{a.actor.name}</strong> {activityText(a,locale)}</p>{Object.keys(a.data.new??{}).length>1&&<details><summary>{locale==="ru"?"Изменения":"Changes"}</summary><pre>{JSON.stringify({old:a.data.old,new:a.data.new},null,2)}</pre></details>}</article>)}{activityCursor&&<button className="secondary" onClick={()=>void moreActivity()}>{locale==="ru"?"Загрузить ещё":"Load more"}</button>}</div></aside></div>}
-      {teamOpen&&<div className="team-overlay" role="presentation" onClick={closeTeam}><aside className="team-drawer" role="dialog" aria-modal="true" aria-label="Команда" onClick={e=>e.stopPropagation()}><div className="panel-heading"><h2>Команда</h2><button className="icon-control" aria-label="Закрыть" onClick={closeTeam}><X/></button></div><ProjectMembers projectID={projectID} user={user} accessToken={accessToken} onMembers={setMembers} locale={locale}/></aside></div>}
+      {activityOpen&&<Drawer title={copy.projectHistory} closeLabel={copy.close} onClose={closeActivity} className="team-drawer activity-panel"><div className="activity-list">{activityError&&<p className="error" role="alert">{boardErrorText(activityError.cause,activityError.fallback,locale)} <button onClick={()=>void openActivity()}>{copy.retry}</button></p>}{activity.map(a=><article key={a.id}><time>{fmt(a.occurred_at)}</time><p><strong>{a.actor.name}</strong> {activityText(a,locale)}</p>{Object.keys(a.data.new??{}).length>1&&<details><summary>{copy.changes}</summary><p>{historyText({id:a.id,task_id:a.object.id,actor_id:a.actor.id,actor_name:a.actor.name,action:a.type,created_at:a.occurred_at,old_values:a.data.old,new_values:a.data.new},locale)}</p></details>}</article>)}{activityLoading&&<p role="status">{copy.loading}</p>}{!activityLoading&&!activityError&&activity.length===0&&<p>{copy.emptyActivity}</p>}{activityCursor&&<button className="secondary" disabled={activityLoading} onClick={()=>void moreActivity()}>{copy.loadMore}</button>}</div></Drawer>}
+      {teamOpen&&<Drawer title={copy.team} closeLabel={copy.close} onClose={closeTeam} className="team-drawer"><div className="team-drawer-content"><ProjectMembers projectID={projectID} user={user} accessToken={accessToken} onMembers={setMembers} locale={locale}/></div></Drawer>}
       {(create || selected) && (
         <TaskDialog
+          locale={locale}
+          key={create?"new":selected?.id}
           task={create ? null : selected}
           members={members}
           user={user}
@@ -446,8 +417,7 @@ export function ProjectDetail({
           history={history}
           onClose={closeTask}
           onSaved={async () => {
-            setCreate(false);
-            setSelected(null);
+            closeTask();
             await load();
           }}
         />
@@ -456,7 +426,8 @@ export function ProjectDetail({
   );
 }
 
-function TaskDialog({
+export function TaskDialog({
+  locale,
   task,
   members,
   user,
@@ -472,6 +443,7 @@ function TaskDialog({
   onClose,
   onSaved,
 }: {
+  locale: Locale;
   task: Task | null;
   members: ProjectMember[];
   user: User;
@@ -487,6 +459,9 @@ function TaskDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const copy=boardCopy[locale],statusName=names(locale),typeName=copy.types,priorityName=copy.priorities;
+  const fmt=(value?:string|null)=>formatDate(value,locale);
+  const dialogRef=useRef<HTMLDivElement>(null);useModalSurface(dialogRef,onClose);
   const [title, setTitle] = useState(task?.title ?? ""),
     [description, setDescription] = useState(task?.description ?? ""),
     [type, setType] = useState<TaskType>(task?.type ?? "task"),
@@ -495,20 +470,20 @@ function TaskDialog({
     ),
     [status, setStatus] = useState<TaskStatus>(task?.status ?? "todo"),
     [assignee, setAssignee] = useState(task?.assignee_id ?? ""),
-    [due, setDue] = useState(task?.due_at ? task.due_at.slice(0, 16) : ""),
+    [due, setDue] = useState(localDateTime(task?.due_at)),
     [body, setBody] = useState(""),
     [editingComment, setEditingComment] = useState<UUID | null>(null),
     [editingBody, setEditingBody] = useState(""),
-    [error, setError] = useState(""),
+    [error, setError] = useState<UIError>(null),
     [busy, setBusy] = useState(false),
     [commentBusy,setCommentBusy]=useState(false);
-  const submitting=useRef(false);
+  const submitting=useRef(false),commentSubmitting=useRef(false);
   async function save(e: FormEvent) {
     e.preventDefault();
     if(submitting.current)return;
     submitting.current=true;
     setBusy(true);
-    setError("");
+    setError(null);
     try {
       const base: any = {
         title: title.trim(),
@@ -520,7 +495,7 @@ function TaskDialog({
         if (status !== task.status) base.status = status;
         if (assignee !== (task.assignee_id ?? ""))
           base.assignee_id = assignee || null;
-        const old = task.due_at ? task.due_at.slice(0, 16) : "";
+        const old = localDateTime(task.due_at);
         if (due !== old) base.due_at = due ? new Date(due).toISOString() : null;
         await api.updateTask(accessToken, projectID, task.id, base);
       } else
@@ -531,60 +506,65 @@ function TaskDialog({
         });
       await onSaved();
     } catch (e) {
-      setError(friendlyActionError(e,"Не удалось сохранить задачу. Введённые данные сохранены."));
+      setError({cause:e,fallback:'saveFailed'});
     } finally {
       submitting.current=false;
       setBusy(false);
     }
   }
-  async function remove() {
-    if (!task || !confirm(`Удалить задачу «${task.title}»?`)) return;
-    await api.deleteTask(accessToken, projectID, task.id);
-    await onSaved();
-  }
+  async function remove(){if(!task||submitting.current||!confirm(`${copy.deleteTask} «${task.title}»?`))return;submitting.current=true;setBusy(true);setError(null);try{await api.deleteTask(accessToken,projectID,task.id);await onSaved();}catch(cause){setError({cause,fallback:'removeFailed'})}finally{submitting.current=false;setBusy(false)}}
   async function add(e: FormEvent) {
     e.preventDefault();
-    if (!task||commentBusy||!body.trim()) return;
-    setCommentBusy(true);setError("");
+    if (!task||commentSubmitting.current||!body.trim()) return;
+    commentSubmitting.current=true;
+    setCommentBusy(true);setError(null);
     try {
       const c = await api.addComment(accessToken,projectID,task.id,body.trim());
       setComments([...comments, c]);
       setBody("");
-    } catch(e) { setError(friendlyActionError(e,"Не удалось отправить комментарий. Текст сохранён.")); }
-    finally { setCommentBusy(false); }
+    } catch(e) { setError({cause:e,fallback:'commentFailed'}); }
+    finally { commentSubmitting.current=false;setCommentBusy(false); }
+  }
+  async function saveComment(comment:Comment){
+    if(!task||commentSubmitting.current||!editingBody.trim())return;commentSubmitting.current=true;setCommentBusy(true);setError(null);
+    const text=editingBody.trim();try{await api.editComment(accessToken,projectID,task.id,comment.id,text);setComments(comments.map(item=>item.id===comment.id?{...item,body:text}:item));setEditingComment(null);}catch(cause){setError({cause,fallback:'commentEditFailed'});}finally{commentSubmitting.current=false;setCommentBusy(false);}
+  }
+  async function removeComment(comment:Comment){
+    if(!task||commentSubmitting.current||!confirm(copy.deleteComment))return;commentSubmitting.current=true;setCommentBusy(true);setError(null);
+    try{await api.deleteComment(accessToken,projectID,task.id,comment.id);setComments(comments.filter(item=>item.id!==comment.id));}catch(cause){setError({cause,fallback:'commentDeleteFailed'});}finally{commentSubmitting.current=false;setCommentBusy(false);}
   }
   return (
     <div className="dialog-backdrop" onMouseDown={(e)=>{if(e.target===e.currentTarget)onClose()}}>
-      <div className="dialog-card task-dialog" role="dialog" aria-modal="true" aria-label={task?`Задача ${task.title}`:"Новая задача"}>
+      <div ref={dialogRef} tabIndex={-1} className="dialog-card task-dialog" role="dialog" aria-modal="true" aria-label={task?`${copy.task} ${task.title}`:copy.newTask}>
         <div className="dialog-title">
-          <h2>{task ? task.title : "Новая задача"}</h2>
-          <button className="secondary" onClick={onClose}>
-            Закрыть
-          </button>
+          <h2>{task ? task.title : copy.newTask}</h2>
+          <button type="button" className="icon-control" aria-label={copy.close} onClick={onClose}><X/></button>
         </div>
+        <div className={`task-dialog-body ${task?"":"task-dialog-body-single"}`}><section className="task-details">
+        {error&&<p className="error" role="alert">{boardErrorText(error.cause,error.fallback,locale)}</p>}
         {tab === "details" &&
           (!edit && task ? (
             <>
               <Markdown text={task.description} />
               <dl className="task-fields">
-                <dt>Тип</dt>
+                <dt>{copy.type}</dt>
                 <dd>{typeName[task.type]}</dd>
-                <dt>Приоритет</dt>
+                <dt>{copy.priority}</dt>
                 <dd>{priorityName[task.priority]}</dd>
-                <dt>Статус</dt>
+                <dt>{copy.status}</dt>
                 <dd>{statusName[task.status]}</dd>
-                <dt>Автор</dt>
+                <dt>{copy.author}</dt>
                 <dd>{task.creator_name}</dd>
-                <dt>Исполнитель</dt>
-                <dd>{task.assignee_name ?? "Не назначен"}</dd>
-                <dt>Срок</dt>
+                <dt>{copy.assignee}</dt>
+                <dd>{task.assignee_name ?? copy.unassigned}</dd>
+                <dt>{copy.due}</dt>
                 <dd>{fmt(task.due_at)}</dd>
               </dl>
               <div className="inline-actions">
-                <button onClick={() => setEdit(true)}>Редактировать</button>
+                <button onClick={() => setEdit(true)}>{copy.edit}</button>
                 {task.created_by === user.id && (
                   <button className="danger" onClick={() => void remove()}>
-                    Удалить
+                    {copy.remove}
                   </button>
                 )}
               </div>
@@ -592,7 +572,7 @@ function TaskDialog({
           ) : (
             <form onSubmit={save}>
               <label>
-                Название
+                {copy.title}
                 <input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -601,7 +581,7 @@ function TaskDialog({
                 />
               </label>
               <label>
-                Описание (Markdown)
+                {copy.markdownDescription}
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -611,7 +591,7 @@ function TaskDialog({
               </label>
               <div className="form-grid">
                 <label>
-                  Тип
+                  {copy.type}
                   <select
                     value={type}
                     onChange={(e) => setType(e.target.value as TaskType)}
@@ -624,7 +604,7 @@ function TaskDialog({
                   </select>
                 </label>
                 <label>
-                  Приоритет
+                  {copy.priority}
                   <select
                     value={priority}
                     onChange={(e) =>
@@ -639,19 +619,19 @@ function TaskDialog({
                   </select>
                 </label>
                 {task&&<label>
-                  Статус
+                  {copy.status}
                   <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)}>
                     <option value={task.status}>{statusName[task.status]}</option>
                     {task.allowed_transitions.map((v) => <option key={v} value={v}>{statusName[v]}</option>)}
                   </select>
                 </label>}
                 <label>
-                  Исполнитель
+                  {copy.assignee}
                   <select
                     value={assignee}
                     onChange={(e) => setAssignee(e.target.value)}
                   >
-                    <option value="">Не назначен</option>
+                    <option value="">{copy.unassigned}</option>
                     {members.map((v) => (
                       <option key={v.user_id} value={v.user_id}>
                         {v.username}
@@ -660,7 +640,7 @@ function TaskDialog({
                   </select>
                 </label>
                 <label>
-                  Срок
+                  {copy.due}
                   <input
                     type="datetime-local"
                     value={due}
@@ -669,7 +649,6 @@ function TaskDialog({
                   />
                 </label>
               </div>
-              {error && <p className="error">{error}</p>}
               <div className="dialog-actions">
                 {task && (
                   <button
@@ -677,53 +656,75 @@ function TaskDialog({
                     className="secondary"
                     onClick={() => setEdit(false)}
                   >
-                    Отмена
+                    {copy.cancel}
                   </button>
                 )}
-                <button disabled={busy}>{busy?"Сохраняем…":"Сохранить"}</button>
+                <button disabled={busy}>{busy?copy.saving:copy.save}</button>
               </div>
             </form>
           ))}
-        {task && tab === "history" && (
-          <div className="timeline">
+        {task && !edit && (
+          <details className="task-history"><summary>{copy.history}</summary><div className="timeline">
             {history.map((h) => (
               <article key={h.id}>
-                <b>{historyText(h)}</b>
+                <b>{historyText(h,locale)}</b>
                 <small>
                   {h.actor_name} · {fmt(h.created_at)}
                 </small>
               </article>
             ))}
-          </div>
+          </div></details>
         )}
-        {task && <aside className="task-comments-side"><div className="task-comments-heading"><h3>Комментарии</h3><span>{comments.length}</span></div><div className="task-comments-list">{comments.length===0&&<p className="muted">Пока нет комментариев.</p>}{comments.map(c=><article key={c.id}><div><strong>{c.author_name}</strong><small>{fmt(c.created_at)}</small></div>{editingComment===c.id?<><textarea value={editingBody} onChange={e=>setEditingBody(e.target.value)} rows={3}/><div className="inline-actions"><button disabled={!editingBody.trim()} onClick={()=>void api.editComment(accessToken,projectID,task.id,c.id,editingBody.trim()).then(()=>{setComments(comments.map(x=>x.id===c.id?{...x,body:editingBody.trim()}:x));setEditingComment(null)})}>Сохранить</button><button className="secondary" onClick={()=>setEditingComment(null)}>Отмена</button></div></>:<><p>{c.body}</p>{c.author_id===user.id&&<div className="inline-actions"><button className="text-button" onClick={()=>{setEditingComment(c.id);setEditingBody(c.body)}}>Изменить</button><button className="delete-link" onClick={()=>{if(confirm("Удалить комментарий?"))void api.deleteComment(accessToken,projectID,task.id,c.id).then(()=>setComments(comments.filter(x=>x.id!==c.id)))}}>Удалить</button></div>}</>}</article>)}</div><form className="task-comment-compose" onSubmit={add}><textarea value={body} onChange={e=>setBody(e.target.value)} placeholder="Написать комментарий" required rows={3}/><button disabled={commentBusy}>{commentBusy?"Отправляем…":"Отправить"}</button></form></aside>}
+        </section>
+        {task && <aside className="task-comments-side">
+          <div className="task-comments-heading"><h3>{copy.comments}</h3><span>{comments.length}</span></div>
+          <div className="task-comments-list">{comments.length===0&&<p className="muted">{copy.noComments}</p>}{comments.map(c=><article className="comment" key={c.id}>
+            <div className="comment-header"><strong>{c.author_name}</strong><div className="comment-meta"><time dateTime={c.created_at}>{fmt(c.created_at)}</time>{canManageComment(c,user.id)&&<ActionMenu label={`${copy.commentActions} ${c.author_name}`}>{close=><><button role="menuitem" disabled={commentBusy} onClick={()=>{close();setEditingComment(c.id);setEditingBody(c.body)}}>{copy.editComment}</button><button role="menuitem" className="delete-link" disabled={commentBusy} onClick={()=>{close();void removeComment(c)}}>{copy.remove}</button></>}</ActionMenu>}</div></div>
+            {editingComment===c.id?<div className="comment-editor"><textarea aria-label={copy.editComment} value={editingBody} onChange={e=>setEditingBody(e.target.value)} rows={3}/><div className="inline-actions"><button disabled={commentBusy||!editingBody.trim()} onClick={()=>void saveComment(c)}>{copy.save}</button><button className="secondary" disabled={commentBusy} onClick={()=>setEditingComment(null)}>{copy.cancel}</button></div></div>:<p className="comment-body">{c.body}</p>}
+          </article>)}</div>
+          <form className="task-comment-compose" onSubmit={add}><textarea aria-label={copy.writeComment} value={body} onChange={e=>setBody(e.target.value)} placeholder={copy.writeComment} required rows={3}/><button disabled={commentBusy||!body.trim()}>{commentBusy?copy.sending:copy.send}</button></form>
+        </aside>}
+
+        </div>
       </div>
     </div>
   );
 }
-function historyText(h: History) {
-  const labels: Record<string, string> = {
-    priority: "Приоритет",
-    status: "Статус",
-    assignee_id: "Исполнитель",
-    due_at: "Срок",
-    title: "Название",
-    description: "Описание",
+export function canManageComment(comment:Pick<Comment,'author_id'>,userID:UUID){return comment.author_id===userID;}
+export function historyText(h: History,locale:Locale) {
+  const copy=boardCopy[locale],activity=activityCopy[locale];
+  const labels:Record<string,string>=activity.fields;
+  const value=(key:string,input:unknown):string=>{
+    if(input==null)return '—';
+    if(typeof input==='boolean')return input?activity.yes:activity.no;
+    if(key==='status')return (activity.statuses as Record<string,string>)[String(input)]??statusLabel(String(input),locale);
+    if(key==='priority')return copy.priorities[input as TaskPriority]??String(input);
+    if(key==='type')return copy.types[input as TaskType]??String(input);
+    if(key==='role')return roleLabel(String(input),locale);
+    if(['due_at','created_at','updated_at','completed_at','expires_at'].includes(key))return formatDate(String(input),locale);
+    if(typeof input==='object')return Object.entries(input).map(([field,item])=>`${labels[field]??activity.details}: ${value(field,item)}`).join('; ');
+    return String(input);
   };
-  const keys = Object.keys(h.new_values ?? h.old_values ?? {});
-  if (!keys.length) return h.action;
-  return keys
-    .map(
-      (k) =>
-        `${labels[k] ?? k}: ${String(h.old_values?.[k] ?? "—")} → ${String(h.new_values?.[k] ?? "—")}`,
-    )
-    .join("; ");
+  // Task edits carry a nested changes object; project/member events carry flat snapshots.
+  const nested=h.new_values?.changes;
+  if(nested&&typeof nested==='object')return Object.entries(nested).map(([key,item])=>{
+    const change=item as {old?:unknown;new?:unknown;changed?:boolean};
+    return `${labels[key]??activity.details}: ${change.changed?activity.changed:`${value(key,change.old)} → ${value(key,change.new)}`}`;
+  }).join('; ');
+  const keys=[...new Set([...Object.keys(h.old_values??{}),...Object.keys(h.new_values??{})])];
+  if(!keys.length)return (copy.actions as Record<string,string>)[h.action]??copy.changed;
+  return keys.map(key=>`${labels[key]??activity.details}: ${value(key,h.old_values?.[key])} → ${value(key,h.new_values?.[key])}`).join('; ');
 }
-function activityText(a: Activity, locale: Locale) {
-  const object=a.object.title?`«${a.object.title}»`:locale==="ru"?"объект":"object";
-  const verbs:Record<string,[string,string]>={"task.created":["создал(а)","created"],"task.updated":["изменил(а)","updated"],"task.deleted":["удалил(а)","deleted"],"member.joined":["добавил(а) участника","added member"],"member.role_changed":["изменил(а) роль","changed role"],"project.updated":["изменил(а) проект","updated project"]};
-  const verb=(verbs[a.type]??[a.type,a.type])[locale==="ru"?0:1];
-  const oldStatus=a.data.old?.status, newStatus=a.data.new?.status;
-  if(a.type==="task.updated"&&oldStatus&&newStatus)return locale==="ru"?`перенёс(ла) ${object}: ${statusName[String(oldStatus) as TaskStatus]} → ${statusName[String(newStatus) as TaskStatus]}`:`moved ${object}: ${String(oldStatus)} → ${String(newStatus)}`;
-  return `${verb} ${object}`;
+function activityText(a:Activity,locale:Locale){
+  const copy=boardCopy[locale],object=a.object.title?`«${a.object.title}»`:copy.object;
+  const oldStatus=a.data.old?.status,newStatus=a.data.new?.status;
+  if(a.type.startsWith('task.')&&oldStatus&&newStatus)return `${copy.moved} ${object}: ${statusLabel(String(oldStatus),locale)} → ${statusLabel(String(newStatus),locale)}`;
+  return `${(copy.actions as Record<string,string>)[a.type]??copy.changed} ${object}`;
 }
+
+function Drawer({title,closeLabel,onClose,className,children}:{title:string;closeLabel:string;onClose:()=>void;className:string;children:ReactNode}){
+  const ref=useRef<HTMLElement>(null);useModalSurface(ref,onClose);
+  return <div className="team-overlay" onMouseDown={event=>{if(event.target===event.currentTarget)onClose()}}><aside ref={ref} tabIndex={-1} className={className} role="dialog" aria-modal="true" aria-label={title}><div className="panel-heading"><h2>{title}</h2><button className="icon-control" aria-label={closeLabel} onClick={onClose}><X/></button></div>{children}</aside></div>;
+}
+
+function localDateTime(value:string|null|undefined){if(!value)return '';const date=new Date(value);return new Date(date.getTime()-date.getTimezoneOffset()*60000).toISOString().slice(0,16);}
