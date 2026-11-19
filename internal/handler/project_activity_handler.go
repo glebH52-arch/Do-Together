@@ -85,7 +85,14 @@ func removeSensitiveActivityFields(value any) {
 	case map[string]any:
 		for key, child := range typed {
 			switch key {
-			case "body", "description", "email", "code", "token", "password", "password_hash":
+			case "description":
+				// Expose only the change marker, never description text or snapshots.
+				if marker, ok := child.(map[string]any); ok && marker["changed"] == true {
+					typed[key] = map[string]any{"changed": true}
+				} else {
+					delete(typed, key)
+				}
+			case "body", "email", "code", "token", "password", "password_hash":
 				delete(typed, key)
 			default:
 				removeSensitiveActivityFields(child)
