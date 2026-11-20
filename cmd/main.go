@@ -45,10 +45,38 @@ func run() error {
 	authManager := auth.NewJWTManager(cfg.JWTSecret, cfg.AccessTokenTTL, "do-together")
 	authMiddleware := middleware.NewAuthMiddleware(authManager)
 	userRepository := postgres.NewPostgresUserRepository(pool)
-	userService := service.NewUserService(userRepository)
-	userHandler := handler.NewUserHandler(userService)
+	emailCodeManager, err := auth.NewEmailCodeManager(
+		cfg.EmailVerificationSecret,
+	)
+	if err != nil {
+		return fmt.Errorf("create email code manager: %w", err)
+	}
+
+	verificationRepository :=
+		postgres.NewPostgresEmailVerificationCodeRepository(pool)
+
+	emailOutboxRepository :=
+		postgres.NewPostgresEmailOutboxRepository(pool)
+
+	transactor := postgres.NewPostgresTransactor(pool)
+	userService := service.NewUserService(
+		userRepository,
+		verificationRepository,
+		emailOutboxRepository,
+		transactor,
+		emailCodeManager,
+		cfg.EmailVerificationCodeTTL,
+	)
+	avatarStorage, err := service.NewAvatarStorage(cfg.AvatarDirectory)
+	if err != nil {
+		return fmt.Errorf("create avatar storage: %w", err)
+	}
+	userHandler := handler.NewUserHandler(userService, avatarStorage, cfg.AvatarBaseURL)
 	authService := service.NewAuthService(
 		userRepository,
+		verificationRepository,
+		transactor,
+		emailCodeManager,
 		authManager,
 		refreshSessionRepository,
 		cfg.RefreshTokenIdleTTL,
@@ -58,6 +86,9 @@ func run() error {
 	projectRepository := postgres.NewPostgresProjectRepository(pool)
 	projectService := service.NewProjectService(projectRepository)
 	projectHandler := handler.NewProjectHandler(projectService)
+	activityRepository := postgres.NewPostgresProjectActivityRepository(pool)
+	activityService := service.NewProjectActivityService(activityRepository)
+	activityHandler := handler.NewProjectActivityHandler(activityService)
 	projectMemberRepository := postgres.NewPostgresProjectMemberRepository(pool)
 	projectMemberService := service.NewProjectMemberService(projectMemberRepository)
 	projectMemberHandler := handler.NewProjectMemberHandler(projectMemberService)
@@ -67,8 +98,14 @@ func run() error {
 	taskRepository := postgres.NewTaskRepository(pool)
 	taskService := service.NewTaskService(taskRepository)
 	taskHandler := handler.NewTaskHandler(taskService)
+	commentRepository := postgres.NewTaskCommentRepository(pool)
+	commentService := service.NewTaskCommentService(commentRepository)
+	commentHandler := handler.NewTaskCommentHandler(commentService)
+	notificationRepository := postgres.NewNotificationRepository(pool)
+	notificationService := service.NewNotificationService(notificationRepository)
+	notificationHandler := handler.NewNotificationHandler(notificationService)
 	healthHandler := handler.NewHealthHandler(pool, redisClient, 2*time.Second)
-	router := handler.NewRouter(projectHandler, userHandler, authHandler, authMiddleware, projectMemberHandler, inviteHandler, taskHandler, healthHandler)
+	router := handler.NewRouter(projectHandler, activityHandler, userHandler, authHandler, authMiddleware, projectMemberHandler, inviteHandler, taskHandler, commentHandler, notificationHandler, healthHandler)
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           router,

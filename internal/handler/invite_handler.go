@@ -7,7 +7,7 @@ import (
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
-	"strconv"
+	"uuid"
 
 	"github.com/gorilla/mux"
 )
@@ -24,19 +24,19 @@ func NewInviteHandler(inviteService *service.InviteService) *InviteHandler {
 
 func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -48,7 +48,17 @@ func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	invite, err := h.inviteService.Create(r.Context(), userID, request.InviteeID, id, domain.ProjectMemberRole(request.Role))
+	if (request.InviteeID != uuid.Nil()) == (request.Email != "") {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	var invite *domain.Invite
+	if request.Email != "" {
+		invite, err = h.inviteService.CreateByEmail(r.Context(), userID, id, request.Email, domain.ProjectMemberRole(request.Role))
+	} else {
+		invite, err = h.inviteService.Create(r.Context(), userID, request.InviteeID, id, domain.ProjectMemberRole(request.Role))
+	}
 	if err != nil {
 		status := statusFromError(err)
 		http.Error(w, http.StatusText(status), status)
@@ -72,7 +82,7 @@ func (h *InviteHandler) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 func (h *InviteHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -102,21 +112,39 @@ func (h *InviteHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 	}
 
 }
+
+func (h *InviteHandler) CountPendingInvites(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil() {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	count, err := h.inviteService.CountPending(r.Context(), userID)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(struct {
+		Count int `json:"count"`
+	}{Count: count})
+}
 func (h *InviteHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -131,19 +159,19 @@ func (h *InviteHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 }
 func (h *InviteHandler) DeclineInvite(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return

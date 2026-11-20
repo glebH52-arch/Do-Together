@@ -6,7 +6,7 @@ import (
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
-	"strconv"
+	"uuid"
 
 	"github.com/gorilla/mux"
 )
@@ -23,7 +23,7 @@ func NewProjectHandler(p *service.ProjectService) *ProjectHandler {
 
 func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -58,19 +58,19 @@ func (h *ProjectHandler) CreateProject(w http.ResponseWriter, r *http.Request) {
 }
 func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -98,7 +98,7 @@ func (h *ProjectHandler) GetProject(w http.ResponseWriter, r *http.Request) {
 }
 func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -136,19 +136,19 @@ func (h *ProjectHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 }
 func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -188,19 +188,19 @@ func (h *ProjectHandler) UpdateProject(w http.ResponseWriter, r *http.Request) {
 }
 func (h *ProjectHandler) ArchiveProject(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -212,4 +212,35 @@ func (h *ProjectHandler) ArchiveProject(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *ProjectHandler) RestoreProject(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || userID == uuid.Nil() {
+		status := http.StatusUnauthorized
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	projectID, err := uuid.Parse(mux.Vars(r)["id"])
+	if err != nil || projectID == uuid.Nil() {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	project, err := h.projectService.RestoreProject(r.Context(), userID, projectID)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	response := projectToResponse(project)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }

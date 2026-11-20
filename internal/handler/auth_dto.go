@@ -9,6 +9,11 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+type verifyEmailRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
 type authResponse struct {
 	AccesssToken string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`

@@ -3,8 +3,8 @@ package auth
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
+	"uuid"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -25,10 +25,10 @@ func NewJWTManager(secret string, ttl time.Duration, issuer string) *JWTManager 
 	}
 }
 
-func (j *JWTManager) CreateAccessToken(userID int) (string, int64, error) {
+func (j *JWTManager) CreateAccessToken(userID uuid.UUID) (string, int64, error) {
 	t := time.Now()
 	claims := jwt.RegisteredClaims{
-		Subject:   strconv.Itoa(userID),
+		Subject:   userID.String(),
 		Issuer:    j.issuer,
 		IssuedAt:  jwt.NewNumericDate(t),
 		ExpiresAt: jwt.NewNumericDate(t.Add(j.ttl)),
@@ -42,7 +42,7 @@ func (j *JWTManager) CreateAccessToken(userID int) (string, int64, error) {
 	return tokenString, int64(j.ttl.Seconds()), nil
 }
 
-func (j *JWTManager) VerifyAccessToken(tokenString string) (int, error) {
+func (j *JWTManager) VerifyAccessToken(tokenString string) (uuid.UUID, error) {
 	claims := &jwt.RegisteredClaims{}
 
 	token, err := jwt.ParseWithClaims(
@@ -56,11 +56,11 @@ func (j *JWTManager) VerifyAccessToken(tokenString string) (int, error) {
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil || token == nil || !token.Valid {
-		return 0, ErrInvalidToken
+		return uuid.Nil(), ErrInvalidToken
 	}
-	userID, err := strconv.Atoi(claims.Subject)
-	if err != nil || userID <= 0 {
-		return 0, ErrInvalidToken
+	userID, err := uuid.Parse(claims.Subject)
+	if err != nil || userID == uuid.Nil() {
+		return uuid.Nil(), ErrInvalidToken
 	}
 	return userID, nil
 }

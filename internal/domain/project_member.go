@@ -3,15 +3,19 @@ package domain
 import (
 	"errors"
 	"time"
+	"uuid"
 )
 
 type ProjectMember struct {
-	Username  string
-	Email     string
-	ProjectID int
-	UserID    int
-	Role      ProjectMemberRole
-	JoinedAt  time.Time
+	Username        string
+	DisplayName     string
+	AvatarFilename  *string
+	AvatarUpdatedAt *time.Time
+	Email           string
+	ProjectID       uuid.UUID
+	UserID          uuid.UUID
+	Role            ProjectMemberRole
+	JoinedAt        time.Time
 }
 
 type ProjectMemberRole string
@@ -28,11 +32,11 @@ var (
 	ErrInvalidProjectMemberRole = errors.New("project member role invalid")
 )
 
-func NewProjectMember(projectID int, userID int, role ProjectMemberRole) (*ProjectMember, error) {
-	if projectID <= 0 {
+func NewProjectMember(projectID uuid.UUID, userID uuid.UUID, role ProjectMemberRole) (*ProjectMember, error) {
+	if projectID == uuid.Nil() {
 		return nil, ErrInvalidProjectID
 	}
-	if userID <= 0 {
+	if userID == uuid.Nil() {
 		return nil, ErrInvalidUserID
 	}
 	err := role.IsValid()

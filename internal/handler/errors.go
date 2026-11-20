@@ -32,12 +32,32 @@ func statusFromError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrUsernameEmpty):
 		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrDisplayNameEmpty), errors.Is(err, domain.ErrDisplayNameTooLong):
+		return http.StatusBadRequest
+	case errors.Is(err, service.ErrAvatarEmpty), errors.Is(err, service.ErrAvatarTooLarge), errors.Is(err, service.ErrAvatarFormat), errors.Is(err, service.ErrAvatarDimensions):
+		return http.StatusBadRequest
+	case errors.Is(err, service.ErrInvalidActivityCursor), errors.Is(err, service.ErrInvalidActivityLimit):
+		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrEmailEmpty):
 		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrEmailInvalid):
 		return http.StatusBadRequest
 	case errors.Is(err, service.ErrInvalidCredentials):
 		return http.StatusUnauthorized
+	case errors.Is(err, service.ErrEmailNotVerified):
+		return http.StatusForbidden
+	case errors.Is(err, service.ErrInvalidVerificationCode):
+		return http.StatusBadRequest
+	case errors.Is(err, repository.ErrEmailVerificationCodeNotFound):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrVerificationCodeExpired):
+		return http.StatusGone
+	case errors.Is(err, domain.ErrVerificationCodeConsumed):
+		return http.StatusConflict
+	case errors.Is(err, domain.ErrVerificationAttemptsExceeded):
+		return http.StatusTooManyRequests
+	case errors.Is(err, domain.ErrEmailAlreadyVerified):
+		return http.StatusConflict
 	case errors.Is(err, repository.ErrProjectMemberNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, repository.ErrProjectMemberAlreadyExists):
@@ -66,8 +86,24 @@ func statusFromError(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, domain.ErrInvalidTaskStatus):
 		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidTaskTransition):
+		return http.StatusConflict
+	case errors.Is(err, repository.ErrTaskConflict):
+		return http.StatusConflict
+	case errors.Is(err, repository.ErrInvalidTaskSearch):
+		return http.StatusBadRequest
+	case errors.Is(err, domain.ErrInvalidTaskType), errors.Is(err, domain.ErrInvalidTaskPriority), errors.Is(err, domain.ErrInvalidAssigneeID):
+		return http.StatusBadRequest
+	case errors.Is(err, repository.ErrAssigneeNotMember):
+		return http.StatusBadRequest
 	case errors.Is(err, repository.ErrTaskNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, repository.ErrCommentNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, repository.ErrNotificationNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, domain.ErrInvalidCommentBody), errors.Is(err, domain.ErrInvalidCommentPage):
+		return http.StatusBadRequest
 	case errors.Is(err, repository.ErrNilTask):
 		return http.StatusInternalServerError
 	case errors.Is(err, repository.ErrSessionNotFound):

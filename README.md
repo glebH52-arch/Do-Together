@@ -1,6 +1,6 @@
 # Do Together
 
-**Do Together** is a backend REST API for collaborative project management, built with Go, PostgreSQL, and Redis.
+**Do Together** is a full-stack collaborative project management application built with Go, React, PostgreSQL, and Redis.
 
 It allows users to create projects, manage team members and roles, work with tasks and invitations, and securely manage authentication sessions.
 
@@ -9,12 +9,14 @@ It allows users to create projects, manage team members and roles, work with tas
 - User registration and authentication
 - Access and refresh token authentication
 - Atomic refresh token rotation with Redis
-- Project creation and archiving
+- Project creation, archiving, and restoration
 - Project filtering and pagination
 - Role-based project access
 - Project member management
 - Project invitations with expiration
+- Editable display names and durable JPEG/PNG avatars
 - Task creation, editing, deletion, and status management
+- Cursor-paginated project activity feed
 - Graceful HTTP server shutdown
 - PostgreSQL and Redis health checks
 - Docker-based local environment
@@ -134,6 +136,7 @@ Make sure the following tools are installed:
 - Git
 - Docker Desktop
 - Docker Compose
+- Go 1.27.2 (only when running checks outside Docker)
 
 ## 1. Clone the Repository
 
@@ -164,6 +167,7 @@ At minimum, replace the following values:
 JWT_SECRET=replace_with_secret_at_least_32_characters
 POSTGRES_PASSWORD=replace_with_postgres_password
 REDIS_PASSWORD=replace_with_redis_password
+EMAIL_VERIFICATION_SECRET=replace_with_another_secret_at_least_32_characters
 ```
 
 > [!IMPORTANT]
@@ -181,8 +185,25 @@ Docker Compose will automatically:
 2. Start Redis
 3. Wait for both services to become healthy
 4. Apply PostgreSQL migrations
-5. Build the Go application
-6. Start the HTTP server
+5. Build and start the API and email worker
+
+By default `EMAIL_TRANSPORT=log` keeps the local demo self-contained: verification messages are written to the email-worker logs and no real email is sent. Read the current verification code with:
+
+```bash
+docker compose logs email-worker
+```
+
+To use Brevo instead, set `EMAIL_TRANSPORT=brevo`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and optionally `BREVO_SENDER_NAME` in `.env`, then recreate the worker.
+
+User avatars are stored in the Compose volume `avatar_data`, so recreating the API container does not remove them. Set `AVATAR_BASE_URL` to the public API origin when it differs from `http://localhost:8080`.
+
+Project activity is available to current members at:
+
+```text
+GET /projects/{projectID}/activity?limit=50&cursor=<opaque-next-cursor>
+```
+
+The response is ordered newest first. Pass `next_cursor` unchanged to load the next page; clients must not construct or edit the cursor.
 
 Check container status:
 
@@ -190,7 +211,7 @@ Check container status:
 docker compose ps -a
 ```
 
-PostgreSQL, Redis, and the application should report:
+PostgreSQL, Redis, and the API should report:
 
 ```text
 healthy
@@ -232,11 +253,7 @@ Expected response:
 }
 ```
 
-The API is now available at:
-
-```text
-http://localhost:8080
-```
+The API is available at `http://localhost:8080`.
 
 ## 5. Stop the Application
 
@@ -265,6 +282,13 @@ The application is configured using environment variables.
 | `POSTGRES_USER` | PostgreSQL user | `postgres` |
 | `POSTGRES_PASSWORD` | PostgreSQL password | `change_me` |
 | `POSTGRES_DB` | PostgreSQL database name | `do_together` |
+| `API_PORT` | Host port for direct API access | `8080` |
+| `EMAIL_VERIFICATION_SECRET` | Secret used to hash verification codes | `replace_with_another_secret_at_least_32_characters` |
+| `EMAIL_VERIFICATION_CODE_TTL` | Verification code lifetime | `15m` |
+| `EMAIL_TRANSPORT` | `log` for reproducible local email or `brevo` for delivery | `log` |
+| `BREVO_API_KEY` | Brevo API key; required only for the `brevo` transport | empty |
+| `BREVO_SENDER_EMAIL` | Verified Brevo sender; required only for the `brevo` transport | empty |
+| `BREVO_SENDER_NAME` | Sender display name | `Do Together` |
 
 When running with Docker Compose, PostgreSQL and Redis addresses are automatically configured to use:
 

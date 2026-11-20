@@ -94,3 +94,35 @@ func (a *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 
 }
+
+func (a *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	request := verifyEmailRequest{}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		status := http.StatusBadRequest
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+
+	accessToken, refreshToken, expiresIn, err := a.authService.VerifyEmail(
+		r.Context(),
+		request.Email,
+		request.Code,
+	)
+	if err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+
+	response := authToResponse(accessToken, refreshToken, expiresIn)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		status := statusFromError(err)
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}

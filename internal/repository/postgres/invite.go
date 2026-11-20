@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -25,57 +26,106 @@ func NewPostgresInviteRepository(pool *pgxpool.Pool) *PostgresInviteRepository {
 	}
 }
 
-func (p *PostgresInviteRepository) Create(
-	ctx context.Context,
-	invite *domain.Invite,
-) error {
+func (p *PostgresInviteRepository) Create(ctx context.Context, invite *domain.Invite) error {
 	if invite == nil {
 		return domain.ErrInviteNotFound
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := p.pool.QueryRow(ctx, stmtCreateInvite, invite.ProjectID, invite.InviterID, invite.InviteeID, invite.Role, invite.Status, invite.ExpiresAt, invite.CreatedAt).Scan(&invite.ID)
+	tx, err := p.pool.Begin(ctx)
 	if err != nil {
-
-		if errors.Is(err, pgx.ErrNoRows) {
-			return repository.ErrForbidden
-		}
-
+		return fmt.Errorf("begin invite: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, stmtExpireStaleInvites, invite.ProjectID, invite.InviteeID, invite.CreatedAt); err != nil {
+		return fmt.Errorf("expire stale invites: %w", err)
+	}
+	var canInvite bool
+	if err := tx.QueryRow(ctx, stmtCanInvite, invite.ProjectID, invite.InviterID).Scan(&canInvite); err != nil {
+		return fmt.Errorf("check invite permission: %w", err)
+	}
+	if !canInvite {
+		return repository.ErrForbidden
+	}
+	var isMember bool
+	if err := tx.QueryRow(ctx, stmtIsProjectMember, invite.ProjectID, invite.InviteeID).Scan(&isMember); err != nil {
+		return fmt.Errorf("check invitee membership: %w", err)
+	}
+	if isMember {
+		return repository.ErrProjectMemberAlreadyExists
+	}
+	var inviteID uuid.UUID
+	err = tx.QueryRow(ctx, stmtCreateInvite, invite.ProjectID, invite.InviterID, invite.InviteeID, invite.Role, invite.Status, invite.ExpiresAt, invite.CreatedAt).Scan(&inviteID)
+	if err != nil {
 		var pgErr *pgconn.PgError
-
 		if errors.As(err, &pgErr) {
-
 			switch pgErr.Code {
-
 			case "23505":
-				if pgErr.ConstraintName == "invites_one_pending_idx" {
+				if pgErr.ConstraintName == "invites_pending_unique" {
 					return domain.ErrPendingInviteAlreadyExists
 				}
-
 			case "23503":
 				switch pgErr.ConstraintName {
-
 				case "invites_project_id_fkey":
 					return repository.ErrProjectNotFound
-
 				case "invites_inviter_id_fkey",
 					"invites_invitee_id_fkey":
 					return repository.ErrUserNotFound
 				}
 			}
 		}
-
 		return fmt.Errorf("insert invite: %w", err)
 	}
+	var projectTitle, inviterName string
+	if err := tx.QueryRow(ctx, stmtGetInvitePresentation, invite.ProjectID, invite.InviterID).Scan(&projectTitle, &inviterName); err != nil {
+		return fmt.Errorf("get invite presentation: %w", err)
+	}
+	var inviteeName string
+	if err := tx.QueryRow(ctx, stmtGetUserDisplayName, invite.InviteeID).Scan(&inviteeName); err != nil {
+		return fmt.Errorf("get invitee presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, invite.ProjectID, invite.InviterID, inviteID, "invite.sent", "invite", projectTitle, nil, map[string]any{
+		"invitee_id":   invite.InviteeID,
+		"invitee_name": inviteeName,
+		"role":         invite.Role,
+	}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit invite: %w", err)
+	}
+	invite.ID = inviteID
+	invite.ProjectTitle = projectTitle
+	invite.InviterName = inviterName
 	return nil
 }
 
-func (p *PostgresInviteRepository) List(
-	ctx context.Context,
-	inviteeID int,
-) ([]*domain.Invite, error) {
-	if inviteeID <= 0 {
+func (p *PostgresInviteRepository) CountPending(ctx context.Context, inviteeID uuid.UUID) (int, error) {
+	if inviteeID == uuid.Nil() {
+		return 0, repository.ErrUserNotFound
+	}
+	var count int
+	if err := p.pool.QueryRow(ctx, stmtCountPendingInvites, inviteeID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count pending invites: %w", err)
+	}
+	return count, nil
+}
+
+func (p *PostgresInviteRepository) FindInviteeIDByEmail(ctx context.Context, email string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := p.pool.QueryRow(ctx, stmtFindInviteeByEmail, email).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil(), repository.ErrUserNotFound
+	}
+	if err != nil {
+		return uuid.Nil(), fmt.Errorf("find invitee: %w", err)
+	}
+	return id, nil
+}
+
+func (p *PostgresInviteRepository) List(ctx context.Context, inviteeID uuid.UUID) ([]*domain.Invite, error) {
+	if inviteeID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -93,7 +143,7 @@ func (p *PostgresInviteRepository) List(
 	for rows.Next() {
 		var invite domain.Invite
 
-		err := rows.Scan(&invite.ID, &invite.ProjectID, &invite.InviterID, &invite.InviteeID, &invite.Role, &invite.Status, &invite.ExpiresAt, &invite.CreatedAt, &invite.UpdatedAt)
+		err := rows.Scan(&invite.ID, &invite.ProjectID, &invite.InviterID, &invite.InviteeID, &invite.Role, &invite.Status, &invite.ExpiresAt, &invite.CreatedAt, &invite.UpdatedAt, &invite.ProjectTitle, &invite.InviterName)
 		if err != nil {
 			return nil, fmt.Errorf("rows scan: %w", err)
 		}
@@ -107,11 +157,7 @@ func (p *PostgresInviteRepository) List(
 	return invites, nil
 }
 
-func (p *PostgresInviteRepository) Accept(
-	ctx context.Context,
-	inviteeID, inviteID int,
-	now time.Time,
-) error {
+func (p *PostgresInviteRepository) Accept(ctx context.Context, inviteeID, inviteID uuid.UUID, now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -159,6 +205,16 @@ func (p *PostgresInviteRepository) Accept(
 	if commandTag.RowsAffected() != 1 {
 		return domain.ErrInviteNotFound
 	}
+	var projectTitle, inviteeName string
+	if err := tx.QueryRow(ctx, stmtGetInviteActivityPresentation, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
+		return fmt.Errorf("get accepted invite presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, invite.ProjectID, inviteeID, invite.ID, "invite.accepted", "invite", projectTitle,
+		map[string]any{"status": "pending"}, map[string]any{
+			"status": "accepted", "invitee_id": invite.InviteeID, "invitee_name": inviteeName, "role": invite.Role,
+		}); err != nil {
+		return err
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit accept invite transaction: %w", err)
@@ -166,21 +222,42 @@ func (p *PostgresInviteRepository) Accept(
 	return nil
 }
 
-func (p *PostgresInviteRepository) Decline(
-	ctx context.Context,
-	inviteeID, inviteID int,
-	now time.Time,
-) error {
-
+func (p *PostgresInviteRepository) Decline(ctx context.Context, inviteeID, inviteID uuid.UUID, now time.Time) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	commandTag, err := p.pool.Exec(ctx, stmtDeclineInvite, inviteID, inviteeID, now)
+	tx, err := p.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin decline invite: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var invite domain.Invite
+	err = tx.QueryRow(ctx, stmtGetInviteForUpdate, inviteID, inviteeID).Scan(&invite.ID, &invite.ProjectID, &invite.InviterID, &invite.InviteeID, &invite.Role, &invite.Status, &invite.ExpiresAt, &invite.CreatedAt, &invite.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrInviteNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock invite for decline: %w", err)
+	}
+	commandTag, err := tx.Exec(ctx, stmtDeclineInvite, inviteID, inviteeID, now)
 	if err != nil {
 		return fmt.Errorf("decline invite: %w", err)
 	}
 	if commandTag.RowsAffected() != 1 {
 		return domain.ErrInviteNotFound
+	}
+	var projectTitle, inviteeName string
+	if err := tx.QueryRow(ctx, stmtGetInviteActivityPresentation, invite.ProjectID, invite.InviteeID).Scan(&projectTitle, &inviteeName); err != nil {
+		return fmt.Errorf("get declined invite presentation: %w", err)
+	}
+	if err := insertProjectActivity(ctx, tx, invite.ProjectID, inviteeID, invite.ID, "invite.declined", "invite", projectTitle,
+		map[string]any{"status": "pending"}, map[string]any{
+			"status": "declined", "invitee_id": invite.InviteeID, "invitee_name": inviteeName, "role": invite.Role,
+		}); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit decline invite: %w", err)
 	}
 	return nil
 }

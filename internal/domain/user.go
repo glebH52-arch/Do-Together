@@ -5,16 +5,21 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+	"uuid"
 )
 
 type User struct {
-	ID           int
-	Username     string
-	Email        string
-	PasswordHash string
-	Status       UserStatus
-	CreatedAt    time.Time
-	UpdatedAt    *time.Time
+	ID              uuid.UUID
+	Username        string
+	DisplayName     string
+	AvatarFilename  *string
+	AvatarUpdatedAt *time.Time
+	Email           string
+	PasswordHash    string
+	Status          UserStatus
+	CreatedAt       time.Time
+	UpdatedAt       *time.Time
+	EmailVerifiedAt *time.Time
 }
 
 type UserStatus string
@@ -24,10 +29,13 @@ const (
 )
 
 var (
-	ErrEmailInvalid      = errors.New("email is invalid")
-	ErrUsernameEmpty     = errors.New("username is empty")
-	ErrEmailEmpty        = errors.New("email is empty")
-	ErrPasswordHashEmpty = errors.New("password hash is empty")
+	ErrEmailInvalid         = errors.New("email is invalid")
+	ErrUsernameEmpty        = errors.New("username is empty")
+	ErrDisplayNameEmpty     = errors.New("display name is empty")
+	ErrDisplayNameTooLong   = errors.New("display name is too long")
+	ErrEmailEmpty           = errors.New("email is empty")
+	ErrPasswordHashEmpty    = errors.New("password hash is empty")
+	ErrEmailAlreadyVerified = errors.New("email already verified")
 )
 
 func validateUsername(username string) (string, error) {
@@ -36,6 +44,17 @@ func validateUsername(username string) (string, error) {
 		return "", ErrUsernameEmpty
 	}
 	return username, nil
+}
+
+func ValidateDisplayName(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", ErrDisplayNameEmpty
+	}
+	if len([]rune(value)) > 100 {
+		return "", ErrDisplayNameTooLong
+	}
+	return value, nil
 }
 
 func validateEmail(email string) (string, error) {
@@ -50,6 +69,8 @@ func validateEmail(email string) (string, error) {
 	}
 	return email, nil
 }
+
+func NormalizeEmail(email string) (string, error) { return validateEmail(email) }
 
 func NewUser(username string, email string, passwordHash string) (*User, error) {
 	username, err := validateUsername(username)
@@ -67,6 +88,7 @@ func NewUser(username string, email string, passwordHash string) (*User, error) 
 
 	user := User{
 		Username:     username,
+		DisplayName:  username,
 		Email:        email,
 		PasswordHash: passwordHash,
 		Status:       UserStatusActive,
@@ -74,4 +96,23 @@ func NewUser(username string, email string, passwordHash string) (*User, error) 
 	}
 
 	return &user, nil
+}
+
+func (u *User) IsEmailVerified() bool {
+	if u.EmailVerifiedAt == nil {
+		return false
+	}
+	return true
+}
+func (u *User) VerifyEmail(now time.Time) error {
+
+	if u.EmailVerifiedAt != nil {
+		return ErrEmailAlreadyVerified
+	}
+
+	var value *time.Time
+	value = &now
+	u.EmailVerifiedAt = value
+	return nil
+
 }

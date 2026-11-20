@@ -7,7 +7,7 @@ import (
 	"do-together/internal/service"
 	"encoding/json"
 	"net/http"
-	"strconv"
+	"uuid"
 
 	"github.com/gorilla/mux"
 )
@@ -24,19 +24,19 @@ func NewProjectMemberHandler(p *service.ProjectMemberService) *ProjectMemberHand
 
 func (h *ProjectMemberHandler) GetMembers(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -68,19 +68,19 @@ func (h *ProjectMemberHandler) GetMembers(w http.ResponseWriter, r *http.Request
 }
 func (h *ProjectMemberHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -103,31 +103,31 @@ func (h *ProjectMemberHandler) AddMember(w http.ResponseWriter, r *http.Request)
 }
 func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText = mux.Vars(r)["userID"]
-	targetID, err := strconv.Atoi(idText)
+	targetID, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if targetID <= 0 {
+	if targetID == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
@@ -144,31 +144,31 @@ func (h *ProjectMemberHandler) RemoveMember(w http.ResponseWriter, r *http.Reque
 }
 func (h *ProjectMemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
-	if !ok || userID <= 0 {
+	if !ok || userID == uuid.Nil() {
 		status := http.StatusUnauthorized
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText := mux.Vars(r)["id"]
-	id, err := strconv.Atoi(idText)
+	id, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	idText = mux.Vars(r)["userID"]
-	targetID, err := strconv.Atoi(idText)
+	targetID, err := uuid.Parse(idText)
 	if err != nil {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	if targetID <= 0 {
+	if targetID == uuid.Nil() {
 		status := http.StatusBadRequest
 		http.Error(w, http.StatusText(status), status)
 		return

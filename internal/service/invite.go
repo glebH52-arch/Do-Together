@@ -5,6 +5,7 @@ import (
 	"do-together/internal/domain"
 	"do-together/internal/repository"
 	"time"
+	"uuid"
 )
 
 type InviteService struct {
@@ -17,15 +18,15 @@ func NewInviteService(repository repository.InviteRepository) *InviteService {
 	}
 }
 
-func (s *InviteService) Create(ctx context.Context, inviterID, inviteeID, projectID int, role domain.ProjectMemberRole) (*domain.Invite, error) {
+func (s *InviteService) Create(ctx context.Context, inviterID, inviteeID, projectID uuid.UUID, role domain.ProjectMemberRole) (*domain.Invite, error) {
 
-	if inviteeID <= 0 {
+	if inviteeID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
-	if inviterID <= 0 {
+	if inviterID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
-	if projectID <= 0 {
+	if projectID == uuid.Nil() {
 		return nil, repository.ErrProjectNotFound
 	}
 
@@ -42,11 +43,23 @@ func (s *InviteService) Create(ctx context.Context, inviterID, inviteeID, projec
 	}
 	return invite, nil
 }
-func (s *InviteService) Accept(ctx context.Context, inviteeID, inviteID int) error {
-	if inviteeID <= 0 {
+
+func (s *InviteService) CreateByEmail(ctx context.Context, inviterID, projectID uuid.UUID, email string, role domain.ProjectMemberRole) (*domain.Invite, error) {
+	email, err := domain.NormalizeEmail(email)
+	if err != nil {
+		return nil, err
+	}
+	inviteeID, err := s.repository.FindInviteeIDByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	return s.Create(ctx, inviterID, inviteeID, projectID, role)
+}
+func (s *InviteService) Accept(ctx context.Context, inviteeID, inviteID uuid.UUID) error {
+	if inviteeID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
-	if inviteID <= 0 {
+	if inviteID == uuid.Nil() {
 		return domain.ErrInviteNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -55,11 +68,11 @@ func (s *InviteService) Accept(ctx context.Context, inviteeID, inviteID int) err
 	return s.repository.Accept(ctx, inviteeID, inviteID, time.Now())
 
 }
-func (s *InviteService) Decline(ctx context.Context, inviteeID, inviteID int) error {
-	if inviteeID <= 0 {
+func (s *InviteService) Decline(ctx context.Context, inviteeID, inviteID uuid.UUID) error {
+	if inviteeID == uuid.Nil() {
 		return repository.ErrUserNotFound
 	}
-	if inviteID <= 0 {
+	if inviteID == uuid.Nil() {
 		return domain.ErrInviteNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -68,8 +81,8 @@ func (s *InviteService) Decline(ctx context.Context, inviteeID, inviteID int) er
 	return s.repository.Decline(ctx, inviteeID, inviteID, time.Now())
 
 }
-func (s *InviteService) List(ctx context.Context, inviteeID int) ([]*domain.Invite, error) {
-	if inviteeID <= 0 {
+func (s *InviteService) List(ctx context.Context, inviteeID uuid.UUID) ([]*domain.Invite, error) {
+	if inviteeID == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	if err := ctx.Err(); err != nil {
@@ -80,4 +93,14 @@ func (s *InviteService) List(ctx context.Context, inviteeID int) ([]*domain.Invi
 		return nil, err
 	}
 	return invites, nil
+}
+
+func (s *InviteService) CountPending(ctx context.Context, inviteeID uuid.UUID) (int, error) {
+	if inviteeID == uuid.Nil() {
+		return 0, repository.ErrUserNotFound
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return s.repository.CountPending(ctx, inviteeID)
 }

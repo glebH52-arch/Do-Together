@@ -4,24 +4,13 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+	"uuid"
 )
 
 func TestNewProject_Success(t *testing.T) {
-	// Arrange: подготовить userID, title и goal
-
-	// Act: вызвать NewProject
-
-	// Assert: проверить ошибку и поля результата
-
-	userID := 123456
-	title := "  get a job  "
-	goal := "  get a job as a junior Go developer  "
-
-	expectedTitle := "get a job"
-	expectedGoal := "get a job as a junior Go developer"
-
-	project, err := NewProject(userID, title, goal)
-
+	userID := uuid.New()
+	project, err := NewProject(userID, "  get a job  ", "  get a job as a junior Go developer  ")
 	if err != nil {
 		t.Fatalf("NewProject() returned unexpected error: %v", err)
 	}
@@ -31,151 +20,92 @@ func TestNewProject_Success(t *testing.T) {
 	if project.CreatedBy != userID {
 		t.Errorf("expected project userID %v, got %v", userID, project.CreatedBy)
 	}
-
-	if project.Goal != expectedGoal {
-		t.Errorf("expected project goal %v, got %v", expectedGoal, project.Goal)
+	if project.Goal != "get a job as a junior Go developer" {
+		t.Errorf("unexpected project goal %q", project.Goal)
 	}
-
 	if project.Status != ProjectStatusActive {
-		t.Errorf("expected project Status %v, got %v", ProjectStatusActive, project.Status)
+		t.Errorf("expected project status %v, got %v", ProjectStatusActive, project.Status)
 	}
-
-	if project.Title != expectedTitle {
-		t.Errorf("expected project title %v, got %v", expectedTitle, project.Title)
+	if project.Title != "get a job" {
+		t.Errorf("unexpected project title %q", project.Title)
 	}
-
-	if project.ID != 0 {
-		t.Errorf("expected project ID %v, got %v", 0, project.ID)
-
+	if project.ID != uuid.Nil() {
+		t.Errorf("expected empty project ID, got %v", project.ID)
 	}
-
 	if project.UpdatedAt != nil {
-		t.Errorf("expected project UpdatedAt %v, got %v", nil, project.UpdatedAt)
+		t.Errorf("expected nil UpdatedAt, got %v", project.UpdatedAt)
 	}
-
 	if project.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
 	}
-
 }
 
 func TestNewProject_EmptyTitle(t *testing.T) {
-	// Arrange
-	userID := 123456
-	title := "   "
-	goal := "get a job"
-
-	// Act
-	project, err := NewProject(userID, title, goal)
-
-	// Assert
-	// 1. project должен быть nil
-	// 2. err должен определяться как ErrTitleEmpty через errors.Is
-
-	if err == nil {
-		t.Fatal("expected ErrTitleEmpty, got nil")
+	project, err := NewProject(uuid.New(), "   ", "get a job")
+	if project != nil || !errors.Is(err, ErrTitleEmpty) {
+		t.Fatalf("project=%v error=%v, want nil and ErrTitleEmpty", project, err)
 	}
-
-	if project != nil {
-		t.Fatal("expected nil project on validation error")
-	}
-
-	// Пришла не та ошибка
-	if !errors.Is(err, ErrTitleEmpty) {
-		t.Fatalf("expected ErrTitleEmpty, got %v", err)
-	}
-
 }
+
 func TestNewProject_TitleTooLong(t *testing.T) {
-	// Arrange
-	userID := 123456
-	title := strings.Repeat("я", 101)
-	goal := "get a job"
-
-	// Act
-	project, err := NewProject(userID, title, goal)
-
-	// Assert
-	if err == nil {
-		t.Fatal("expected ErrTitleTooLong, got nil")
-	}
-
-	if project != nil {
-		t.Fatal("expected nil project on validation error")
-	}
-
-	// Пришла не та ошибка
-	if !errors.Is(err, ErrTitleTooLong) {
-		t.Fatalf("expected ErrTitleTooLong, got %v", err)
+	project, err := NewProject(uuid.New(), strings.Repeat("я", 101), "get a job")
+	if project != nil || !errors.Is(err, ErrTitleTooLong) {
+		t.Fatalf("project=%v error=%v, want nil and ErrTitleTooLong", project, err)
 	}
 }
 
 func TestNewProject_EmptyGoal(t *testing.T) {
-	// Arrange
-	userID := 123456
-	title := "12343"
-	goal := "		"
-
-	// Act
-	project, err := NewProject(userID, title, goal)
-
-	// Assert
-	// 1. project должен быть nil
-	// 2. err должен определяться как ErrTitleEmpty через errors.Is
-
-	if err == nil {
-		t.Fatal("expected ErrGoalEmpty, got nil")
+	project, err := NewProject(uuid.New(), "title", "\t\t")
+	if project != nil || !errors.Is(err, ErrGoalEmpty) {
+		t.Fatalf("project=%v error=%v, want nil and ErrGoalEmpty", project, err)
 	}
-
-	if project != nil {
-		t.Fatal("expected nil project on validation error")
-	}
-
-	// Пришла не та ошибка
-	if !errors.Is(err, ErrGoalEmpty) {
-		t.Fatalf("expected ErrGoalEmpty, got %v", err)
-	}
-
 }
+
 func TestNewProject_GoalTooLong(t *testing.T) {
-	// Arrange
-	userID := 123456
-	title := "get a job"
-	goal := strings.Repeat("я", 201)
-
-	// Act
-	project, err := NewProject(userID, title, goal)
-
-	// Assert
-	if err == nil {
-		t.Fatal("expected ErrGoalTooLong, got nil")
-	}
-
-	if project != nil {
-		t.Fatal("expected nil project on validation error")
-	}
-
-	// Пришла не та ошибка
-	if !errors.Is(err, ErrGoalTooLong) {
-		t.Fatalf("expected ErrGoalTooLong, got %v", err)
+	project, err := NewProject(uuid.New(), "title", strings.Repeat("я", 201))
+	if project != nil || !errors.Is(err, ErrGoalTooLong) {
+		t.Fatalf("project=%v error=%v, want nil and ErrGoalTooLong", project, err)
 	}
 }
 
-func TestNewProject_TitleTooAtMaxLenght(t *testing.T) {
-	// Arrange
-	userID := 123456
-	title := strings.Repeat("я", 100)
-	goal := "get a job"
-
-	// Act
-	project, err := NewProject(userID, title, goal)
-
-	// Assert
-	if err != nil {
-		t.Fatalf("NewProject() returned unexpected error: %v", err)
+func TestNewProject_TitleAtMaxLength(t *testing.T) {
+	project, err := NewProject(uuid.New(), strings.Repeat("я", 100), "get a job")
+	if err != nil || project == nil {
+		t.Fatalf("project=%v error=%v", project, err)
 	}
-	if project == nil {
-		t.Fatal("NewProject() returned nil project without error")
+}
+
+func TestProjectRestore(t *testing.T) {
+	archivedAt := time.Now().Add(-time.Hour)
+	project := Project{
+		Status:    ProjectStatusArchived,
+		UpdatedAt: &archivedAt,
 	}
 
+	project.Restore()
+
+	if project.Status != ProjectStatusActive {
+		t.Fatalf("status = %q, want %q", project.Status, ProjectStatusActive)
+	}
+	if project.UpdatedAt == nil || !project.UpdatedAt.After(archivedAt) {
+		t.Fatalf("updated_at = %v, want after %v", project.UpdatedAt, archivedAt)
+	}
+
+	restoredAt := project.UpdatedAt
+	project.Restore()
+	if project.UpdatedAt != restoredAt {
+		t.Fatal("repeated restore changed updated_at")
+	}
+}
+
+func TestProjectArchiveRestoreRoundTrip(t *testing.T) {
+	project := Project{Status: ProjectStatusActive}
+	project.Archive()
+	if project.Status != ProjectStatusArchived {
+		t.Fatalf("archive status = %q", project.Status)
+	}
+	project.Restore()
+	if project.Status != ProjectStatusActive {
+		t.Fatalf("restore status = %q", project.Status)
+	}
 }

@@ -2,10 +2,14 @@ package service
 
 import (
 	"context"
+	"do-together/internal/auth"
 	"do-together/internal/domain"
 	"do-together/internal/repository"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+	"uuid"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -15,13 +19,83 @@ var (
 )
 
 type UserService struct {
-	repository repository.UserRepository
+	repository               repository.UserRepository
+	verificationRepository   repository.EmailVerificationCodeRepository
+	emailOutboxRepository    repository.EmailOutboxRepository
+	transactor               repository.Transactor
+	emailCodeManager         *auth.EmailCodeManager
+	emailVerificationCodeTTL time.Duration
 }
 
-func NewUserService(repository repository.UserRepository) *UserService {
-	return &UserService{
-		repository: repository,
+func (s *UserService) UpdateDisplayName(ctx context.Context, id uuid.UUID, displayName string) (*domain.User, error) {
+	value, err := domain.ValidateDisplayName(displayName)
+	if err != nil {
+		return nil, err
 	}
+	user, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	user.DisplayName = value
+	now := time.Now()
+	user.UpdatedAt = &now
+	if err := s.repository.UpdateProfile(ctx, user); err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *UserService) SetAvatar(ctx context.Context, id uuid.UUID, filename string, now time.Time) (*domain.User, *string, error) {
+	user, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	previous := user.AvatarFilename
+	user.AvatarFilename = &filename
+	user.AvatarUpdatedAt = &now
+	user.UpdatedAt = &now
+	if err := s.repository.UpdateProfile(ctx, user); err != nil {
+		return nil, nil, err
+	}
+	return user, previous, nil
+}
+
+func (s *UserService) RemoveAvatar(ctx context.Context, id uuid.UUID, now time.Time) (*domain.User, *string, error) {
+	user, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	previous := user.AvatarFilename
+	user.AvatarFilename = nil
+	user.AvatarUpdatedAt = nil
+	user.UpdatedAt = &now
+	if err := s.repository.UpdateProfile(ctx, user); err != nil {
+		return nil, nil, err
+	}
+	return user, previous, nil
+}
+
+func NewUserService(
+	userRepository repository.UserRepository,
+	verificationRepository repository.EmailVerificationCodeRepository,
+	emailOutboxRepository repository.EmailOutboxRepository,
+	transactor repository.Transactor,
+	emailCodeManager *auth.EmailCodeManager,
+	emailVerificationCodeTTL time.Duration,
+) *UserService {
+	return &UserService{
+		repository:               userRepository,
+		verificationRepository:   verificationRepository,
+		emailOutboxRepository:    emailOutboxRepository,
+		transactor:               transactor,
+		emailCodeManager:         emailCodeManager,
+		emailVerificationCodeTTL: emailVerificationCodeTTL,
+	}
+}
+
+type emailVerificationPayload struct {
+	Code     string `json:"code"`
+	Username string `json:"username"`
 }
 
 func (s *UserService) CreateUser(ctx context.Context, username, email, password string) (*domain.User, error) {
@@ -39,18 +113,86 @@ func (s *UserService) CreateUser(ctx context.Context, username, email, password 
 	if err != nil {
 		return nil, err
 	}
-	err = s.repository.Create(ctx, user)
+	plainCode, codeHash, err := s.emailCodeManager.Generate()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"generate email verification code: %w",
+			err,
+		)
+	}
+
+	payload, err := json.Marshal(emailVerificationPayload{
+		Code:     plainCode,
+		Username: user.Username,
+	})
+	if err != nil {
+		return nil, fmt.Errorf(
+			"marshal email verification payload: %w",
+			err,
+		)
+	}
+
+	now := time.Now()
+
+	err = s.transactor.WithinTx(
+		ctx,
+		func(txCtx context.Context) error {
+			if err := s.repository.Create(txCtx, user); err != nil {
+				return err
+			}
+
+			code, err := domain.NewEmailVerificationCode(
+				user.ID,
+				codeHash,
+				now,
+				s.emailVerificationCodeTTL,
+			)
+			if err != nil {
+				return err
+			}
+
+			message, err := domain.NewEmailOutboxMessage(
+				user.ID,
+				user.Email,
+				domain.EmailKindVerification,
+				json.RawMessage(payload),
+				now,
+			)
+			if err != nil {
+				return err
+			}
+
+			if err := s.verificationRepository.Create(
+				txCtx,
+				code,
+			); err != nil {
+				return err
+			}
+
+			if err := s.emailOutboxRepository.Create(
+				txCtx,
+				message,
+			); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
 	return user, nil
 }
 
-func (s *UserService) GetUser(ctx context.Context, id int) (*domain.User, error) {
+func (s *UserService) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if id <= 0 {
+	if id == uuid.Nil() {
 		return nil, repository.ErrUserNotFound
 	}
 	user, err := s.repository.GetByID(ctx, id)

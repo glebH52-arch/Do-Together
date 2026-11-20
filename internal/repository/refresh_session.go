@@ -5,6 +5,7 @@ import (
 	"do-together/internal/domain"
 	"errors"
 	"time"
+	"uuid"
 )
 
 var (
@@ -17,6 +18,6 @@ var (
 
 type RefreshSessionRepository interface {
 	Create(ctx context.Context, session *domain.RefreshSession, idleTTL time.Duration) error
-	Rotate(ctx context.Context, sessionID, oldHash, newHash string, now time.Time, idleTTL time.Duration) (userID int, err error)
+	Rotate(ctx context.Context, sessionID, oldHash, newHash string, now time.Time, idleTTL time.Duration) (userID uuid.UUID, err error)
 	Delete(ctx context.Context, sessionID string) error
 }
